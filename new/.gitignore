@@ -1,0 +1,10 @@
+target
+workspace
+log
+*.json
+compilation-cache
+.ddlog
+queries/corpus_queries_ddlog/
+*.csv
+executor/src/query.rs
+queries/corpus_queries.dl

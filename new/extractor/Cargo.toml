@@ -1,0 +1,18 @@
+[package]
+name = "corpus-extractor"
+version = "0.1.0"
+authors = ["Vytautas Astrauskas <vastrauskas@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+[lib]
+test = false
+
+[[bin]]
+name = "rustc"
+path = "src/main.rs"
+
+[dependencies]
+corpus-common = { path = "../common" }
+log = "0.4"
+log-derive = "0.3"
