@@ -42,8 +42,8 @@ impl ConvertInto<types::Unsafety> for hir::Unsafety {
 impl ConvertInto<types::Mutability> for hir::Mutability {
     fn convert_into(&self) -> types::Mutability {
         match self {
-            hir::MutMutable => types::Mutability::Mutable,
-            hir::MutImmutable => types::Mutability::Immutable,
+            hir::Mutability::Mutable => types::Mutability::Mutable,
+            hir::Mutability::Immutable => types::Mutability::Immutable,
         }
     }
 }

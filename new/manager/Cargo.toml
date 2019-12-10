@@ -35,3 +35,4 @@ tokio = "0.1.22"
 nix = "0.14.1"
 failure = "0.1.5"
 walkdir = "2"
+rustwide = { version = "0.3.2", features = ["unstable"] }

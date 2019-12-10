@@ -86,12 +86,12 @@ impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
         self.current_item = old_item;
     }
     /// Extract information from unoptmized MIR.
-    fn visit_mir(&mut self, body_id: hir::def_id::DefId, body: &mir::Body<'tcx>) {
+    fn visit_mir(&mut self, body_id: hir::def_id::DefId, body: &mir::BodyAndCache<'tcx>) {
         let error = format!("Mir outside of an item: {:?}", body.span);
         let item = self.current_item.expect(&error);
         let mut mir_visitor = MirVisitor::new(self.tcx, item, body_id, body, &mut self.filler);
         mir_visitor.visit_scopes();
-        mir::visit::Visitor::visit_body(&mut mir_visitor, body);
+        mir::visit::Visitor::visit_body(&mut mir_visitor, body.unwrap_read_only());
     }
 }
 
@@ -99,7 +99,7 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
     fn visit_item(&mut self, item: &'tcx hir::Item) {
         let name: &str = &item.ident.name.as_str();
         let visibility: types::Visibility = item.vis.convert_into();
-        match item.node {
+        match item.kind {
             hir::ItemKind::Mod(ref module) => {
                 // This avoids visiting the root module.
                 self.visit_submodule(name, visibility, module, item.hir_id);
@@ -189,7 +189,7 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
     fn visit_foreign_item(&mut self, item: &'tcx hir::ForeignItem) {
         let def_id = self.filler.resolve_hir_id(item.hir_id);
         let visibility = item.vis.convert_into();
-        match item.node {
+        match item.kind {
             hir::ForeignItemKind::Fn(..) => {
                 self.filler.tables.register_function_declaration(
                     self.current_module,
@@ -212,20 +212,6 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
         }
         intravisit::walk_foreign_item(self, item);
     }
-    #[cfg(custom_rustc)]
-    fn visit_body(&mut self, body: &'tcx hir::Body) {
-        intravisit::walk_body(self, body);
-        let id = body.id();
-        let owner = self.hir_map.body_owner_def_id(id);
-        let borrowed_mir = self.tcx.mir_validated(owner).0.try_borrow();
-        let mir_body = if let Some(ref mir_body) = *borrowed_mir {
-            mir_body
-        } else {
-            self.tcx.optimized_mir(owner)
-        };
-        self.visit_mir(owner, mir_body);
-    }
-    #[cfg(not(custom_rustc))]
     fn visit_body(&mut self, body: &'tcx hir::Body) {
         intravisit::walk_body(self, body);
         let id = body.id();

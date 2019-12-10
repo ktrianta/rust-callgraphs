@@ -19,10 +19,10 @@ mod table_filler;
 use rustc::hir::intravisit::walk_crate;
 use rustc::ty::TyCtxt;
 use rustc_interface::interface::Compiler;
+use rustc_interface::Queries;
 use std::path::PathBuf;
 
-pub fn analyse(compiler: &Compiler, tcx: TyCtxt) {
-    let name = compiler.crate_name().unwrap().peek().clone();
+fn analyse_with_tcx(name: String, tcx: TyCtxt) {
     let hash = tcx.crate_hash(rustc::hir::def_id::LOCAL_CRATE);
     let cargo_pkg_version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let cargo_pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();
@@ -52,4 +52,12 @@ pub fn analyse(compiler: &Compiler, tcx: TyCtxt) {
 
     tables.save_json(path.clone());
     tables.save_bincode(path);
+}
+
+pub fn analyse<'tcx>(compiler: &Compiler, queries: &'tcx Queries<'tcx>) {
+    let name = queries.crate_name().unwrap().peek().clone();
+
+    queries.global_ctxt().unwrap().peek_mut().enter(move |tcx| {
+        analyse_with_tcx(name, tcx);
+    });
 }

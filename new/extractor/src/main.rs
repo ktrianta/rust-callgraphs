@@ -9,28 +9,15 @@ extern crate rustc_interface;
 
 use corpus_extractor::analyse;
 use rustc_driver::Compilation;
-use rustc_interface::interface::Compiler;
+use rustc_interface::{interface::Compiler, Queries};
 use std::process;
 
 struct CorpusCallbacks {}
 
 impl rustc_driver::Callbacks for CorpusCallbacks {
-    #[cfg(custom_rustc)]
-    fn before_analysis(&mut self, compiler: &Compiler) -> Compilation {
+    fn after_analysis(&mut self, compiler: &Compiler, queries: &Queries) -> Compilation {
         compiler
-            .global_ctxt()
-            .unwrap()
-            .peek_mut()
-            .enter(|tcx| analyse(compiler, tcx));
-        Compilation::Continue
-    }
-    #[cfg(not(custom_rustc))]
-    fn after_analysis(&mut self, compiler: &Compiler) -> Compilation {
-        compiler
-            .global_ctxt()
-            .unwrap()
-            .peek_mut()
-            .enter(|tcx| analyse(compiler, tcx));
+            .enter(|queries| analyse(compiler, queries));
         Compilation::Continue
     }
 }
@@ -38,7 +25,7 @@ impl rustc_driver::Callbacks for CorpusCallbacks {
 fn main() {
     rustc_driver::init_rustc_env_logger();
     let mut callbacks = CorpusCallbacks {};
-    let exit_code = rustc_driver::report_ices_to_stderr_if_any(|| {
+    let exit_code = rustc_driver::catch_fatal_errors(|| {
         use std::env;
         let mut is_color_arg = false;
         let mut args = env::args()

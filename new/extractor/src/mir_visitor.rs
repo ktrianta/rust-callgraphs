@@ -59,8 +59,8 @@ impl<'a, 'b, 'tcx> MirVisitor<'a, 'b, 'tcx> {
         }
     }
     fn get_scope_safety(&self, scope: mir::SourceScope) -> Option<mir::Safety> {
-        match self.body.source_scope_local_data {
-            mir::ClearCrossCrate::Set(ref data) => Some(data[scope].safety),
+        match self.body.source_scopes[scope].local_data {
+            mir::ClearCrossCrate::Set(ref data) => Some(data.safety),
             mir::ClearCrossCrate::Clear => None,
         }
     }
@@ -92,7 +92,7 @@ impl<'a, 'b, 'tcx> Visitor<'tcx> for MirVisitor<'a, 'b, 'tcx> {
                 let call = self.filler.tables.register_call(scope, unsafety, abi);
                 match func {
                     mir::Operand::Constant(constant) => {
-                        if let ty::TyKind::FnDef(target_id, _) = constant.literal.ty.sty {
+                        if let ty::TyKind::FnDef(target_id, _) = constant.literal.ty.kind {
                             let id = self.filler.resolve_def_id(target_id);
                             self.filler.tables.register_const_call_target(call, id);
                         } else {
