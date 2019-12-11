@@ -47,8 +47,8 @@ impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
             current_item: None,
         }
     }
-    pub fn tables(self) -> Tables {
-        self.filler.tables
+    pub fn filler(self) -> TableFiller<'a, 'tcx> {
+        self.filler
     }
     fn visit_submodule(
         &mut self,

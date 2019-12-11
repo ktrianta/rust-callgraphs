@@ -70,7 +70,19 @@ fn analyse_with_tcx(name: String, tcx: TyCtxt) {
 
     walk_crate(&mut hir_visitor, krate);
 
-    let tables = hir_visitor.tables();
+    let mut filler = hir_visitor.filler();
+
+    {
+        let state = SHARED_STATE.lock().unwrap();
+        for (def_id, uses_unsafe) in state.function_unsafe_use.iter() {
+            let def_path = filler.resolve_def_id(def_id.clone());
+            filler
+                .tables
+                .register_function_unsafe_use(def_path, *uses_unsafe);
+        }
+    }
+
+    let tables = filler.tables;
     let mut path: PathBuf = std::env::var("RUST_CORPUS_DATA_PATH").unwrap().into();
     path.push(file_name);
 
