@@ -6,6 +6,8 @@
 // This source code is licensed under the MIT license found in
 // https://github.com/facebookexperimental/MIRAI/blob/8f294e6919ff3e61f4866593ede58851c875b49f/LICENSE.
 
+#![allow(dead_code)]
+
 use log::debug;
 use log_derive::{logfn, logfn_inputs};
 use rustc::hir::def_id::DefId;
