@@ -5,6 +5,8 @@
 // https://raw.githubusercontent.com/rust-lang/rust/ae1b871cca56613b1af1a5121dd24ac810ff4b89/LICENSE-MIT and
 // https://raw.githubusercontent.com/rust-lang/rust/ae1b871cca56613b1af1a5121dd24ac810ff4b89/LICENSE-APACHE.
 
+#![allow(dead_code)]
+
 use rustc_data_structures::fx::FxHashSet;
 
 use rustc::hir;
@@ -14,7 +16,6 @@ use rustc::lint::builtin::{SAFE_PACKED_BORROWS, UNUSED_UNSAFE};
 use rustc::mir::visit::{MutatingUseContext, PlaceContext, Visitor};
 use rustc::mir::*;
 use rustc::ty::cast::CastTy;
-use rustc::ty::query::Providers;
 use rustc::ty::{self, TyCtxt};
 
 use syntax::symbol::{sym, Symbol};
@@ -39,6 +40,8 @@ pub struct UnsafetyChecker<'a, 'tcx> {
     /// Mark an `unsafe` block as used, so we don't lint it.
     used_unsafe: FxHashSet<hir::HirId>,
     inherited_blocks: Vec<(hir::HirId, bool)>,
+    /// Does the analysed function use unsafe directly?
+    fn_uses_unsafe: bool,
 }
 
 impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
@@ -66,6 +69,7 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
             param_env,
             used_unsafe: Default::default(),
             inherited_blocks: vec![],
+            fn_uses_unsafe: false,
         }
     }
 }
@@ -397,7 +401,10 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
                 false
             }
             // `unsafe` function bodies allow unsafe without additional unsafe blocks
-            Safety::BuiltinUnsafe | Safety::FnUnsafe => true,
+            Safety::BuiltinUnsafe | Safety::FnUnsafe => {
+                self.fn_uses_unsafe = true;
+                true
+            }
             Safety::ExplicitUnsafe(hir_id) => {
                 // mark unsafe block as used if there are any unsafe operations inside
                 if !violations.is_empty() {
@@ -486,14 +493,6 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
     }
 }
 
-pub(crate) fn provide(providers: &mut Providers<'_>) {
-    *providers = Providers {
-        unsafety_check_result,
-        unsafe_derive_on_repr_packed,
-        ..*providers
-    };
-}
-
 struct UnusedUnsafeVisitor<'a> {
     used_unsafe: &'a FxHashSet<hir::HirId>,
     unsafe_blocks: &'a mut Vec<(hir::HirId, bool)>,
@@ -545,7 +544,7 @@ fn check_unused_unsafe(
     hir::intravisit::Visitor::visit_body(&mut visitor, body);
 }
 
-pub(crate) fn unsafety_check_result(tcx: TyCtxt<'_>, def_id: DefId) -> UnsafetyCheckResult {
+pub(crate) fn unsafety_check_result(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     debug!("unsafety_violations({:?})", def_id);
 
     // N.B., this borrow is valid because all the consumers of
@@ -572,10 +571,7 @@ pub(crate) fn unsafety_check_result(tcx: TyCtxt<'_>, def_id: DefId) -> UnsafetyC
         &checker.used_unsafe,
         &mut checker.inherited_blocks,
     );
-    UnsafetyCheckResult {
-        violations: checker.violations.into(),
-        unsafe_blocks: checker.inherited_blocks.into(),
-    }
+    checker.fn_uses_unsafe
 }
 
 fn unsafe_derive_on_repr_packed(tcx: TyCtxt<'_>, def_id: DefId) {

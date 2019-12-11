@@ -22,6 +22,7 @@ mod mir_visitor;
 mod mirai_utils;
 mod table_filler;
 
+use lazy_static::lazy_static;
 use rustc::hir::def_id::DefId;
 use rustc::hir::intravisit::walk_crate;
 use rustc::session::Session;
@@ -29,7 +30,21 @@ use rustc::ty::query::Providers;
 use rustc::ty::TyCtxt;
 use rustc_interface::interface::Compiler;
 use rustc_interface::Queries;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+/// The struct to share the state among queries.
+#[derive(Default)]
+struct SharedState {
+    /// Does the given function use unsafe operations directly in its body.
+    /// (This can be true only for functions marked with `unsafe`.)
+    function_unsafe_use: HashMap<DefId, bool>,
+}
+
+lazy_static! {
+    static ref SHARED_STATE: Mutex<SharedState> = Mutex::new(SharedState::default());
+}
 
 fn analyse_with_tcx(name: String, tcx: TyCtxt) {
     let hash = tcx.crate_hash(rustc::hir::def_id::LOCAL_CRATE);
@@ -63,7 +78,7 @@ fn analyse_with_tcx(name: String, tcx: TyCtxt) {
     tables.save_bincode(path);
 }
 
-pub fn analyse<'tcx>(compiler: &Compiler, queries: &'tcx Queries<'tcx>) {
+pub fn analyse<'tcx>(_compiler: &Compiler, queries: &'tcx Queries<'tcx>) {
     let name = queries.crate_name().unwrap().peek().clone();
 
     queries.global_ctxt().unwrap().peek_mut().enter(move |tcx| {
@@ -83,6 +98,11 @@ fn unsafety_check_result(tcx: TyCtxt<'_>, def_id: DefId) -> rustc::mir::Unsafety
     let mut providers = Providers::default();
     rustc_mir::provide(&mut providers);
     let original_unsafety_check_result = providers.unsafety_check_result;
-    check_unsafety::unsafety_check_result(tcx, def_id); // TODO: Extract information whether an unsafe function does not use unsafe.
+    let result = check_unsafety::unsafety_check_result(tcx, def_id);
+    {
+        let mut state = SHARED_STATE.lock().unwrap();
+        state.function_unsafe_use.insert(def_id, result);
+    }
+
     original_unsafety_check_result(tcx, def_id)
 }
