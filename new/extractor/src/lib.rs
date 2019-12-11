@@ -3,24 +3,34 @@
 // modified, or distributed except according to those terms.
 
 #![feature(rustc_private)]
+#![feature(box_patterns)]
+#![feature(slice_patterns)]
+#![feature(bool_to_option)]
 
 extern crate rustc;
 extern crate rustc_data_structures;
 extern crate rustc_interface;
 extern crate rustc_metadata;
+extern crate rustc_mir;
 extern crate syntax;
+extern crate rustc_error_codes;
 
 mod converters;
 mod hir_visitor;
 mod mir_visitor;
 mod mirai_utils;
 mod table_filler;
+mod check_unsafety;
 
 use rustc::hir::intravisit::walk_crate;
 use rustc::ty::TyCtxt;
 use rustc_interface::interface::Compiler;
 use rustc_interface::Queries;
 use std::path::PathBuf;
+use rustc::session::Session;
+use rustc::ty::query::Providers;
+use rustc::hir::def_id::DefId;
+
 
 fn analyse_with_tcx(name: String, tcx: TyCtxt) {
     let hash = tcx.crate_hash(rustc::hir::def_id::LOCAL_CRATE);
