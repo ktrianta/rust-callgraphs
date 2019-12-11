@@ -70,3 +70,19 @@ pub fn analyse<'tcx>(compiler: &Compiler, queries: &'tcx Queries<'tcx>) {
         analyse_with_tcx(name, tcx);
     });
 }
+
+pub fn override_queries(
+    _session: &Session,
+    providers: &mut Providers,
+    _providers_extern: &mut Providers,
+) {
+    providers.unsafety_check_result = unsafety_check_result;
+}
+
+fn unsafety_check_result(tcx: TyCtxt<'_>, def_id: DefId) -> rustc::mir::UnsafetyCheckResult {
+    let mut providers = Providers::default();
+    rustc_mir::provide(&mut providers);
+    let original_unsafety_check_result = providers.unsafety_check_result;
+    check_unsafety::unsafety_check_result(tcx, def_id); // TODO: Extract information whether an unsafe function does not use unsafe.
+    original_unsafety_check_result(tcx, def_id)
+}

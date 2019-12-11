@@ -7,17 +7,23 @@
 extern crate rustc_driver;
 extern crate rustc_interface;
 
-use corpus_extractor::analyse;
+use corpus_extractor::{analyse, override_queries};
 use rustc_driver::Compilation;
-use rustc_interface::{interface::Compiler, Queries};
+use rustc_interface::{
+    interface::{Compiler, Config},
+    Queries,
+};
 use std::process;
 
 struct CorpusCallbacks {}
 
 impl rustc_driver::Callbacks for CorpusCallbacks {
-    fn after_analysis(&mut self, compiler: &Compiler, queries: &Queries) -> Compilation {
-        compiler
-            .enter(|queries| analyse(compiler, queries));
+    fn config(&mut self, config: &mut Config) {
+        config.override_queries = Some(override_queries);
+    }
+
+    fn after_analysis(&mut self, compiler: &Compiler, _queries: &Queries) -> Compilation {
+        compiler.enter(|queries| analyse(compiler, queries));
         Compilation::Continue
     }
 }
