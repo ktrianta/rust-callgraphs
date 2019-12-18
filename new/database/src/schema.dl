@@ -1,0 +1,47 @@
+// Types.
+
+/// A function call.
+inc_id FunctionCall: u32 {}
+/// A span (an interned location in the program with additional information
+/// such as macro expansion).
+inc_id Span: u64 {
+    /// A dummy span that is used as a call site span for a span that is a root span.
+    ROOT_PARENT_SPAN
+}
+/// The hash of the crate as reported by the compiler.
+custom_id CrateHash: u64 {
+    impl std::fmt::LowerHex for CrateHash {
+        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            write!(f, "{:x}", self.0)
+        }
+    }
+}
+
+/// The visibility of an item.
+enum Visibility {
+    /// The item is declared as public (`pub`).
+    Public,
+    /// The item is declared as public within the crate (`pub(crate)`).
+    Crate,
+    /// The item is declared as public for some modules (`pub(in foo:bar)`).
+    Restricted,
+    /// The item is declared as private (default visibility).
+    Private,
+    /// Failed to obtain visibility information from the compiler.
+    #[default]
+    Unknown,
+}
+
+
+// Interning tables.
+
+/// Interned strings.
+intern strings<String as InternedString<u64>>;
+/// Interned ABI.
+intern abis<InternedString as Abi<u32>>;
+
+
+// Relations.
+
+/// The crate types associated with the build.
+relation build_crate_types(build: Build, crate_type: InternedString);

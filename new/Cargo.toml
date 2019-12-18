@@ -1,10 +1,7 @@
 [workspace]
 members = [
-    "manager",
-    "extractor",
-    "common",
-    "executor",
-    "queries/corpus_queries_ddlog",
+    "database",
+    "database-dsl",
 ]
 
 [profile.release]
