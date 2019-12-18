@@ -5,6 +5,7 @@ use quote::quote;
 pub(crate) fn generate_tokens(schema: ast::DatabaseSchema) -> TokenStream {
     let types = generate_types(&schema);
     let tables = generate_interning_tables(&schema);
+    let relations = generate_relations(&schema);
     quote! {
         pub mod types {
             use serde_derive::{Deserialize, Serialize};
@@ -12,6 +13,7 @@ pub(crate) fn generate_tokens(schema: ast::DatabaseSchema) -> TokenStream {
         }
         pub mod tables {
             #tables
+            #relations
         }
     }
 }
@@ -49,40 +51,59 @@ fn generate_id_types(schema: &ast::DatabaseSchema) -> TokenStream {
     tokens
 }
 
+fn is_numeric_type(typ: &syn::Type) -> bool {
+    if let syn::Type::Path(syn::TypePath {
+        qself: None,
+        ref path,
+    }) = typ
+    {
+        path.is_ident("u8")
+            || path.is_ident("u16")
+            || path.is_ident("u32")
+            || path.is_ident("u64")
+            || path.is_ident("usize")
+    } else {
+        false
+    }
+}
+
 fn generate_id_decl(name: &syn::Ident, typ: &syn::Type) -> TokenStream {
-    quote! {
+    let mut tokens = quote! {
         #[derive(
             Debug, Eq, PartialEq, Hash, Clone, Copy,
             Deserialize, Serialize, PartialOrd, Ord, Default
         )]
         pub struct #name(pub(super) #typ);
-
-        impl From<#typ> for #name {
-            fn from(value: #typ) -> Self {
-                Self(value)
+    };
+    if is_numeric_type(typ) {
+        tokens.extend(quote! {
+            impl From<#typ> for #name {
+                fn from(value: #typ) -> Self {
+                    Self(value)
+                }
             }
-        }
 
-        impl From<usize> for #name {
-            fn from(value: usize) -> Self {
-                Self(value as #typ)
+            impl From<usize> for #name {
+                fn from(value: usize) -> Self {
+                    Self(value as #typ)
+                }
             }
-        }
 
-        impl Into<usize> for #name {
-            fn into(self) -> usize {
-                self.0 as usize
+            impl Into<usize> for #name {
+                fn into(self) -> usize {
+                    self.0 as usize
+                }
             }
-        }
 
-        impl #name {
-            /// Shift the id by given `offset`.
-            pub fn shift(&self, offset: #typ) -> Self {
-                Self(self.0.checked_add(offset).expect("Overflow!"))
+            impl #name {
+                /// Shift the id by given `offset`.
+                pub fn shift(&self, offset: #typ) -> Self {
+                    Self(self.0.checked_add(offset).expect("Overflow!"))
+                }
             }
-        }
-
+        });
     }
+    tokens
 }
 
 fn generate_enum_types(schema: &ast::DatabaseSchema) -> TokenStream {
@@ -96,7 +117,7 @@ fn generate_enum_types(schema: &ast::DatabaseSchema) -> TokenStream {
         let enum_tokens = quote! {
 
             #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Deserialize, Serialize, PartialOrd, Ord)]
-            #item
+            pub #item
 
             impl Default for #enum_name {
                 fn default() -> Self {
@@ -127,6 +148,30 @@ fn generate_interning_tables(schema: &ast::DatabaseSchema) -> TokenStream {
         use crate::data_structures::InterningTable;
         use super::types::*;
         pub struct InterningTables {
+            #fields
+        }
+    }
+}
+
+fn generate_relations(schema: &ast::DatabaseSchema) -> TokenStream {
+    let mut fields = TokenStream::new();
+    for ast::Relation {
+        ref name,
+        ref parameters,
+    } in &schema.relations
+    {
+        let mut parameter_tokens = TokenStream::new();
+        for ast::RelationParameter { typ, .. } in parameters {
+            parameter_tokens.extend(quote! {#typ,});
+        }
+        fields.extend(quote! {
+            pub #name: Relation<(#parameter_tokens)>,
+        });
+    }
+    quote! {
+        use crate::data_structures::Relation;
+        use super::types::ScopeSafety;
+        pub struct Relations {
             #fields
         }
     }

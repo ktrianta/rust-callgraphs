@@ -1,5 +1,11 @@
 // Types.
 
+/// A Rust module.
+inc_id Module: u32 {}
+/// An item such a function or a constant.
+inc_id Item: u32 {}
+/// A scope.
+inc_id Scope: u32 {}
 /// A function call.
 inc_id FunctionCall: u32 {}
 /// A span (an interned location in the program with additional information
@@ -17,6 +23,23 @@ custom_id CrateHash: u64 {
     }
 }
 
+custom_id DefPathHash: (u64, u64) {
+    impl From<(u64, u64)> for DefPathHash {
+        fn from(value: (u64, u64)) -> Self {
+            Self(value)
+        }
+    }
+}
+
+/// Mutability of an item. Having a const variant allows merging statics with constants.
+enum Mutability {
+    Mutable,
+    Immutable,
+    Const,
+    #[default]
+    Unknown,
+}
+
 /// The visibility of an item.
 enum Visibility {
     /// The item is declared as public (`pub`).
@@ -32,16 +55,89 @@ enum Visibility {
     Unknown,
 }
 
+/// The unsafety of an item.
+enum Unsafety {
+    Unsafe,
+    Normal,
+    /// Failed to obtain unsafety information from the compiler.
+    ///
+    /// TODO: For closures we could check if that closure is declared inside an unsafe block.
+    #[default]
+    Unknown,
+}
+
+/// The safety of a scope.
+enum ScopeSafety {
+    /// The scope is safe.
+    Safe,
+    /// The scope is unsafe because of a PushUnsafeBlock.
+    BuiltinUnsafe,
+    /// The scope is unsafe because it is inside an unsafe function.
+    FnUnsafe,
+    /// The scope is unseafe because it is inside an unsafe block.
+    ExplicitUnsafe,
+    /// Failed to obtain the safety information from the compiler.
+    #[default]
+    Unknown,
+}
 
 // Interning tables.
 
 /// Interned strings.
 intern strings<String as InternedString<u64>>;
+/// Interned package names.
+intern package_names<InternedString as Package<u32>>;
+/// Interned package versions.
+intern package_versions<InternedString as PackageVersion<u32>>;
+/// Interned crate names.
+intern crate_names<InternedString as Crate<u32>>;
+/// Interned names.
+intern names<InternedString as Name<u32>>;
+/// Interned relative definition paths.
+intern relative_def_paths<InternedString as RelativeDefId<u32>>;
+/// Interned MIRAI summary keys.
+intern summary_keys<InternedString as SummaryId<u32>>;
 /// Interned ABI.
-intern abis<InternedString as Abi<u32>>;
-
+intern abis<InternedString as Abi<u8>>;
+/// Definition paths is a globablly unique identifier of the definition.
+intern def_paths<(Crate, CrateHash, RelativeDefId, DefPathHash, SummaryId) as DefPath<u64>>;
+/// A crate compiled with a specific configuration.
+intern builds<(Package, PackageVersion, Crate, CrateHash) as Build<u32>>;
+/// Interned span locations.
+intern span_locations<InternedString as SpanLocation<u64>>;
+/// Interned span expansion kinds.
+intern span_expansion_kind<InternedString as SpanExpansionKind<u8>>;
 
 // Relations.
 
 /// The crate types associated with the build.
 relation build_crate_types(build: Build, crate_type: InternedString);
+/// The module that is the root of the AST tree.
+relation root_modules(build: Build, root_module: Module);
+/// `(parent, child)` relation between modules.
+relation submodules(parent: Module, child: Module, name: Name, visibility: Visibility);
+/// An item that is a function definition.
+relation function_definitions(item: Item, def_path: DefPath, module: Module, visibility: Visibility, unsafety: Unsafety, abi: Abi);
+/// Marks whether a function uses unsafe operations directly in its body.
+/// Only functions marked as `unsafe` can do that.
+relation function_unsafe_use(def_path: DefPath, uses_unsafe: bool);
+/// An item that is either a constant or a static.
+relation static_definitions(item: Item, module: Module, name: Name, visibility: Visibility, mutability: Mutability);
+/// An impl item.
+relation impl_definitions(item: Item, module: Module, name: Name, visibility: Visibility, unsafety: Unsafety);
+/// A generic item that is not included in any of the categories above.
+relation items(item: Item, module: Module, name: Name, visibility: Visibility);
+/// MIR cfgs inside a specific item.
+///
+/// `Scope` is the root scope.
+relation mir_cfgs(item: Item, def_path: DefPath, scope: Scope);
+/// parent_scope, scope, scope's safety.
+relation subscopes(parent: Scope, child: Scope, safety: ScopeSafety, span: Span);
+/// A call in a scope.
+relation calls(call: FunctionCall, scope: Scope, unsafety: Unsafety, abi: Abi);
+/// The called function.
+relation const_call_targets(call: FunctionCall, def_path: DefPath);
+/// Information about spans: (span, call_site_span, expansion kind, location).
+relation spans(span: Span, call_site_span: Span, expansion_kind: SpanExpansionKind, location: SpanLocation);
+/// Additional information about a span that was created by a macro expansion.
+relation macro_expansions(span: Span, macro_symbol: InternedString, macro_definition_location: SpanLocation);
