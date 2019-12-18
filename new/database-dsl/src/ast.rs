@@ -10,6 +10,15 @@ pub struct CustomId {
 /// A constant of the incremental ID.
 pub struct Constant {
     pub name: syn::Ident,
+    /// **NOTE:** The constant value must be unique and from the range
+    /// `0..IncrementalId.constants.len()`.
+    pub value: syn::Lit,
+}
+
+impl Constant {
+    pub fn get_getter_name(&self) -> syn::Ident {
+        syn::Ident::new(&format!("get_{}", self.name).to_lowercase(), self.name.span())
+    }
 }
 
 /// An identifier that is incremented each time an object is created.
@@ -18,6 +27,18 @@ pub struct IncrementalId {
     pub typ: syn::Type,
     /// Some IDs have special values.
     pub constants: Vec<Constant>,
+}
+
+impl IncrementalId {
+    pub fn get_field_name(&self) -> syn::Ident {
+        syn::Ident::new(&format!("{}s", self.name).to_lowercase(), self.name.span())
+    }
+    pub fn get_generator_fn_name(&self) -> syn::Ident {
+        syn::Ident::new(&format!("get_fresh_{}", self.name).to_lowercase(), self.name.span())
+    }
+    pub fn get_default_value(&self) -> syn::LitInt {
+        syn::LitInt::new(&self.constants.len().to_string(), self.name.span())
+    }
 }
 
 /// An identifier used as a key for an interning table.

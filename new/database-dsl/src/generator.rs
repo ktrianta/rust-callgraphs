@@ -6,14 +6,17 @@ pub(crate) fn generate_tokens(schema: ast::DatabaseSchema) -> TokenStream {
     let types = generate_types(&schema);
     let tables = generate_interning_tables(&schema);
     let relations = generate_relations(&schema);
+    let counters = generate_counters(&schema);
     quote! {
         pub mod types {
             use serde_derive::{Deserialize, Serialize};
             #types
         }
         pub mod tables {
+            use super::types::*;
             #tables
             #relations
+            #counters
         }
     }
 }
@@ -146,7 +149,6 @@ fn generate_interning_tables(schema: &ast::DatabaseSchema) -> TokenStream {
     }
     quote! {
         use crate::data_structures::InterningTable;
-        use super::types::*;
         pub struct InterningTables {
             #fields
         }
@@ -170,9 +172,60 @@ fn generate_relations(schema: &ast::DatabaseSchema) -> TokenStream {
     }
     quote! {
         use crate::data_structures::Relation;
-        use super::types::ScopeSafety;
         pub struct Relations {
             #fields
+        }
+    }
+}
+
+fn generate_counters(schema: &ast::DatabaseSchema) -> TokenStream {
+    let mut fields = TokenStream::new();
+    let mut getter_functions = TokenStream::new();
+    let mut default_impls = TokenStream::new();
+    for id in &schema.incremental_ids
+    {
+        let ast::IncrementalId {
+            ref typ, ref constants, ..
+        } = id;
+        let field_name = id.get_field_name();
+        fields.extend(quote!{
+            #field_name: #typ,
+        });
+        let get_fresh_name = id.get_generator_fn_name();
+        getter_functions.extend(quote!{
+            fn #get_fresh_name(&mut self) -> #typ {
+                let value = self.#field_name.into();
+                self.#field_name += 1;
+                value
+            }
+        });
+        for constant in constants {
+            let get_constant_name = constant.get_getter_name();
+            let value = &constant.value;
+            getter_functions.extend(quote!{
+                fn #get_constant_name(&mut self) -> #typ {
+                    #value
+                }
+            });
+        }
+        let default_value = id.get_default_value();
+        default_impls.extend(quote!{
+           #field_name: #default_value,
+        });
+    }
+    quote! {
+        pub struct Counters {
+            #fields
+        }
+        impl Counters {
+            #getter_functions
+        }
+        impl Default for Counters {
+            fn default() -> Self {
+                Self {
+                    #default_impls
+                }
+            }
         }
     }
 }

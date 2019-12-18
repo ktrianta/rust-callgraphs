@@ -32,6 +32,10 @@ impl Parse for ast::Constant {
         let _attrs = input.call(syn::Attribute::parse_outer)?;
         Ok(Self {
             name: input.parse()?,
+            value: {
+                input.parse::<Token![=]>()?;
+                input.parse()?
+            }
         })
     }
 }
