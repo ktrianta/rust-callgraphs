@@ -264,8 +264,6 @@ fn generate_registration_functions(schema: &ast::DatabaseSchema) -> TokenStream 
             functions.extend(function);
         };
     }
-    // eprintln!("functions\n:{}", functions);
-    // unimplemented!();
     functions
 }
 
@@ -366,11 +364,11 @@ fn generate_intern_value_registration(
     let key_type = table.get_key_type();
 
     let mut name_generator = NameGenerator::new(String::from("value"));
-    let (final_name, arg_typ, tokens) =
+    let (final_name, param_type, tokens) =
         generate_interning_type(&key_type, schema, &mut name_generator);
-    let arg_name = name_generator.get_ident();
+    let param_name = name_generator.get_ident();
     quote! {
-        pub fn #registration_function_name(&mut self, #arg_name: #arg_typ) -> #key_type {
+        pub fn #registration_function_name(&mut self, #param_name: #param_type) -> #key_type {
             #tokens
             #final_name
         }
