@@ -35,7 +35,7 @@ impl Parse for ast::Constant {
             value: {
                 input.parse::<Token![=]>()?;
                 input.parse()?
-            }
+            },
         })
     }
 }

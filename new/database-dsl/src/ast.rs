@@ -17,7 +17,10 @@ pub struct Constant {
 
 impl Constant {
     pub fn get_getter_name(&self) -> syn::Ident {
-        syn::Ident::new(&format!("get_{}", self.name).to_lowercase(), self.name.span())
+        syn::Ident::new(
+            &format!("get_{}", self.name).to_lowercase(),
+            self.name.span(),
+        )
     }
 }
 
@@ -34,7 +37,10 @@ impl IncrementalId {
         syn::Ident::new(&format!("{}s", self.name).to_lowercase(), self.name.span())
     }
     pub fn get_generator_fn_name(&self) -> syn::Ident {
-        syn::Ident::new(&format!("get_fresh_{}", self.name).to_lowercase(), self.name.span())
+        syn::Ident::new(
+            &format!("get_fresh_{}", self.name).to_lowercase(),
+            self.name.span(),
+        )
     }
     pub fn get_default_value(&self) -> syn::LitInt {
         syn::LitInt::new(&self.constants.len().to_string(), self.name.span())
@@ -55,6 +61,28 @@ pub struct InterningTable {
     pub name: syn::Ident,
     pub key: InternedId,
     pub value: syn::Type,
+}
+
+impl InterningTable {
+    pub fn get_registration_function_name(&self) -> syn::Ident {
+        let mut name = String::from("register_");
+        for c in self.name.to_string().chars() {
+            if c.is_uppercase() {
+                name.push('_');
+                name.extend(c.to_lowercase());
+            } else {
+                name.push(c);
+            }
+        }
+
+        syn::Ident::new(&name, self.name.span())
+    }
+    pub fn get_key_type(&self) -> syn::Type {
+        syn::Type::Path(syn::TypePath {
+            qself: None,
+            path: self.key.name.clone().into(),
+        })
+    }
 }
 
 /// A definition of an enum.
