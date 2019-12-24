@@ -12,7 +12,7 @@ inc_id FunctionCall: u32 {}
 /// such as macro expansion).
 inc_id Span: u64 {
     /// A dummy span that is used as a call site span for a span that is a root span.
-    ROOT_PARENT_SPAN = 0,
+    ROOT_PARENT_SPAN = 0u64,
 }
 /// The hash of the crate as reported by the compiler.
 custom_id CrateHash: u64 {
