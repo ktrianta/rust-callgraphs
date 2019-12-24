@@ -113,31 +113,31 @@ intern span_expansion_kind<InternedString as SpanExpansionKind<u8>>;
 /// The crate types associated with the build.
 relation build_crate_types(build: Build, crate_type: InternedString);
 /// The module that is the root of the AST tree.
-relation root_modules(build: Build, root_module: Module);
+relation root_modules(build: Build, root_module: auto Module);
 /// `(parent, child)` relation between modules.
-relation submodules(parent: Module, child: Module, name: Name, visibility: Visibility);
+relation submodules(parent: Module, child: auto Module, name: Name, visibility: Visibility);
 /// An item that is a function definition.
-relation function_definitions(item: Item, def_path: DefPath, module: Module, visibility: Visibility, unsafety: Unsafety, abi: Abi);
+relation function_definitions(item: auto Item, def_path: DefPath, module: Module, visibility: Visibility, unsafety: Unsafety, abi: Abi);
 /// Marks whether a function uses unsafe operations directly in its body.
 /// Only functions marked as `unsafe` can do that.
 relation function_unsafe_use(def_path: DefPath, uses_unsafe: bool);
 /// An item that is either a constant or a static.
-relation static_definitions(item: Item, module: Module, name: Name, visibility: Visibility, mutability: Mutability);
+relation static_definitions(item: auto Item, module: Module, name: Name, visibility: Visibility, mutability: Mutability);
 /// An impl item.
-relation impl_definitions(item: Item, module: Module, name: Name, visibility: Visibility, unsafety: Unsafety);
+relation impl_definitions(item: auto Item, module: Module, name: Name, visibility: Visibility, unsafety: Unsafety);
 /// A generic item that is not included in any of the categories above.
-relation items(item: Item, module: Module, name: Name, visibility: Visibility);
+relation items(item: auto Item, module: Module, name: Name, visibility: Visibility);
 /// MIR cfgs inside a specific item.
 ///
 /// `Scope` is the root scope.
-relation mir_cfgs(item: Item, def_path: DefPath, scope: Scope);
+relation mir_cfgs(item: Item, def_path: DefPath, scope: auto Scope);
 /// parent_scope, scope, scope's safety.
-relation subscopes(parent: Scope, child: Scope, safety: ScopeSafety, span: Span);
+relation subscopes(parent: Scope, child: auto Scope, safety: ScopeSafety, span: Span);
 /// A call in a scope.
-relation calls(call: FunctionCall, scope: Scope, unsafety: Unsafety, abi: Abi);
+relation calls(call: auto FunctionCall, scope: Scope, unsafety: Unsafety, abi: Abi);
 /// The called function.
-relation const_call_targets(call: FunctionCall, def_path: DefPath);
+relation const_call_targets(call: auto FunctionCall, def_path: DefPath);
 /// Information about spans: (span, call_site_span, expansion kind, location).
-relation spans(span: Span, call_site_span: Span, expansion_kind: SpanExpansionKind, location: SpanLocation);
+relation spans(span: auto Span, call_site_span: Span, expansion_kind: SpanExpansionKind, location: SpanLocation);
 /// Additional information about a span that was created by a macro expansion.
 relation macro_expansions(span: Span, macro_symbol: InternedString, macro_definition_location: SpanLocation);
