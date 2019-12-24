@@ -388,6 +388,7 @@ fn generate_relation_registration(
     let mut return_tokens = TokenStream::new();
     let mut return_type_tokens = TokenStream::new();
     let mut interning_tokens = TokenStream::new();
+    let mut arg_tokens = TokenStream::new();
     for ast::RelationParameter {
         name,
         typ,
@@ -403,14 +404,25 @@ fn generate_relation_registration(
                 let #name = self.counters.#generator_fn_name();
             });
             return_type_tokens.extend(quote! {#typ,});
-            return_tokens.extend(quote! {#name,})
+            return_tokens.extend(quote! {#name,});
+            arg_tokens.extend(quote! {#name,});
         } else {
-            unimplemented!();
+            let mut name_generator = NameGenerator::new(name.to_string());
+            let (final_name, param_type, tokens) =
+                generate_interning_type(&typ, schema, &mut name_generator);
+            let param_name = name_generator.get_ident();
+            param_tokens.extend(quote! {
+                #param_name: #param_type,
+            });
+            interning_tokens.extend(tokens);
+            arg_tokens.extend(quote! {#final_name,});
         }
     }
+    let table_name = &relation.name;
     quote! {
         pub fn #registration_function_name(&mut self, #param_tokens) -> (#return_type_tokens) {
             #interning_tokens
+            self.relations.#table_name.insert((#arg_tokens));
             (#return_tokens)
         }
     }
