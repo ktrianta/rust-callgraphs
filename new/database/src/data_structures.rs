@@ -113,16 +113,6 @@ impl<K> InterningTable<K, String>
 where
     K: InterningTableKey,
 {
-    fn intern_ref(&mut self, value: &str) -> K {
-        if self.inv_contents.contains_key(value) {
-            self.inv_contents[value]
-        } else {
-            let new_key = self.contents.len().into();
-            self.inv_contents.insert(value.to_string(), new_key);
-            self.contents.push(value.to_string());
-            new_key
-        }
-    }
     pub fn lookup(&self, value: &str) -> Option<K> {
         self.inv_contents.get(value).cloned()
     }

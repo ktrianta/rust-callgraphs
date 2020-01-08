@@ -1,5 +1,24 @@
 use syn;
 
+/// The kind of a identifier.
+#[derive(Debug, Clone, Copy)]
+pub enum TypeKind<'a> {
+    CustomId,
+    IncrementalId(&'a IncrementalId),
+    InternedId(&'a InterningTable),
+    Enum,
+    RustType,
+}
+
+impl<'a> TypeKind<'a> {
+    pub fn is_custom_id(&self) -> bool {
+        match self {
+            TypeKind::CustomId => true,
+            _ => false,
+        }
+    }
+}
+
 /// A custom ID (most likely some ID taken directly from the Rust compiler).
 pub struct CustomId {
     pub name: syn::Ident,
@@ -8,6 +27,7 @@ pub struct CustomId {
 }
 
 /// A constant of the incremental ID.
+#[derive(Debug)]
 pub struct Constant {
     pub name: syn::Ident,
     /// **NOTE:** The constant value must be unique and from the range
@@ -25,6 +45,7 @@ impl Constant {
 }
 
 /// An identifier that is incremented each time an object is created.
+#[derive(Debug)]
 pub struct IncrementalId {
     pub name: syn::Ident,
     pub typ: syn::Type,
@@ -48,6 +69,7 @@ impl IncrementalId {
 }
 
 /// An identifier used as a key for an interning table.
+#[derive(Debug)]
 pub struct InternedId {
     pub name: syn::Ident,
     pub typ: syn::Type,
@@ -57,6 +79,7 @@ pub struct InternedId {
 ///
 /// Note: the implementation assumes that if values are equal (by the definition of `==`),
 /// then the generates keys should also be the same.
+#[derive(Debug)]
 pub struct InterningTable {
     pub name: syn::Ident,
     pub key: InternedId,
@@ -134,5 +157,36 @@ impl DatabaseSchema {
             }
         }
         None
+    }
+    pub fn get_type_kind(&self, typ: &syn::Type) -> TypeKind {
+        if let syn::Type::Path(syn::TypePath { qself: None, path }) = typ {
+            if let Some(ident) = path.get_ident() {
+                for id in &self.custom_ids {
+                    if &id.name == ident {
+                        return TypeKind::CustomId;
+                    }
+                }
+                for id in &self.incremental_ids {
+                    if &id.name == ident {
+                        return TypeKind::IncrementalId(id);
+                    }
+                }
+                for table in &self.interning_tables {
+                    if &table.key.name == ident {
+                        return TypeKind::InternedId(table);
+                    }
+                }
+                for enum_info in &self.enums {
+                    if &enum_info.item.ident == ident {
+                        return TypeKind::Enum;
+                    }
+                }
+                match ident.to_string().as_ref() {
+                    "bool" | "u32" | "u64" | "u128" => return TypeKind::RustType,
+                    _ => panic!("Unknown type: {:?}.", typ),
+                }
+            }
+        }
+        panic!("Type {:?} is not an identifier.", typ);
     }
 }

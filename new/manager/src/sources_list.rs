@@ -4,14 +4,13 @@
 
 //! Module for managing lists of crate sources.
 
-use cargo::core::{Dependency, PackageId, Source, SourceId};
+use cargo::core::{Dependency, InternedString, Source, SourceId};
 use cargo::sources::RegistrySource;
 use cargo::util::Config;
 use log_derive::{logfn, logfn_inputs};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::File;
-use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 /// A create on crates.io.
@@ -19,12 +18,6 @@ use std::time::SystemTime;
 pub struct Package {
     name: String,
     version: String,
-}
-
-impl Package {
-    pub fn to_package_id(&self, source_id: SourceId) -> PackageId {
-        PackageId::new(&self.name, &self.version, source_id).unwrap()
-    }
 }
 
 /// A crate source: either crates.io name or a repository URL.
@@ -43,18 +36,6 @@ impl Crate {
         match self {
             Crate::Package(Package { ref version, .. }) => version,
         }
-    }
-    /// Create a path inside the ``root`` directory that uniquely identifies this crate.
-    pub fn work_path(&self, root: &Path) -> PathBuf {
-        let name = self.name();
-        let prefix = name.chars().chain("___".chars()).take(3);
-        let mut work_path = root.to_path_buf();
-        for c in prefix {
-            work_path.push(c.to_string());
-        }
-        work_path.push(name);
-        work_path.push(self.version());
-        work_path
     }
 }
 
@@ -79,7 +60,7 @@ impl CratesList {
         let creation_date = SystemTime::now();
         let mut crates = Vec::new();
         for crate_name in super::top_crates::top_crates_by_download_count(count) {
-            let query = Dependency::new_override(&crate_name, crates_io);
+            let query = Dependency::new_override(InternedString::new(&crate_name), crates_io);
             let summaries = source.query_vec(&query).unwrap_or_else(|err| {
                 panic!("Querying for {} failed: {}", crate_name, err);
             });
@@ -110,6 +91,41 @@ impl CratesList {
         }
     }
 
+    /// Create a list with all crates.
+    ///
+    /// `all_versions` – should get all versions or only the newest one?
+    #[logfn_inputs(Trace)]
+    pub fn all_crates(all_versions: bool) -> Self {
+        let creation_date = SystemTime::now();
+        let index = crates_index::Index::new_cargo_default();
+        index
+            .retrieve_or_update()
+            .expect("Unable to update registry");
+        let mut crates = Vec::new();
+        for krate in index.crates() {
+            if all_versions {
+                for version in krate.versions() {
+                    let package = Package {
+                        name: version.name().to_string(),
+                        version: version.version().to_string(),
+                    };
+                    crates.push(Crate::Package(package));
+                }
+            } else {
+                let version = krate.latest_version();
+                let package = Package {
+                    name: version.name().to_string(),
+                    version: version.version().to_string(),
+                };
+                crates.push(Crate::Package(package));
+            }
+        }
+        Self {
+            creation_date: creation_date,
+            crates: crates,
+        }
+    }
+
     /// Save the list into a file.
     #[logfn_inputs(Trace)]
     pub fn save(&self, path: &std::path::Path) {
@@ -126,9 +142,7 @@ impl CratesList {
         serde_json::from_reader(file).unwrap_or_else(|e| panic!("Invalid JSON {:?}: {}", path, e))
     }
 
-    pub fn iter_packages<'a>(&'a self) -> impl Iterator<Item = &'a Package> {
-        self.crates.iter().flat_map(|c| match c {
-            Crate::Package(package) => Some(package),
-        })
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a Crate> {
+        self.crates.iter()
     }
 }

@@ -22,6 +22,14 @@ struct CratesList {
     crates: Vec<Crate>,
 }
 
+fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
+    reqwest::blocking::ClientBuilder::new()
+        .user_agent("Rust Corpus - Top Crates Scrapper")
+        .build()?
+        .get(url)
+        .send()
+}
+
 /// Create a list of top ``count`` crates.
 #[logfn(Trace)]
 pub fn top_crates_by_download_count(mut count: usize) -> Vec<String> {
@@ -35,8 +43,12 @@ pub fn top_crates_by_download_count(mut count: usize) -> Vec<String> {
             "https://crates.io/api/v1/crates?page={}&per_page={}&sort=downloads",
             page, PAGE_SIZE
         );
-        let resp = reqwest::get(&url).expect("Could not fetch top crates");
-        assert!(resp.status().is_success());
+        let resp = get(&url).expect("Could not fetch top crates");
+        assert!(
+            resp.status().is_success(),
+            "Response status: {}",
+            resp.status()
+        );
         let page_crates: CratesList = serde_json::from_reader(resp).expect("Invalid JSON");
         sources.extend(page_crates.crates.into_iter().take(count).map(|c| c.name));
         count -= min(PAGE_SIZE, count);

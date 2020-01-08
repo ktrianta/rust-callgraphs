@@ -200,14 +200,14 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         RawPtr(ty_and_mut) => {
             str.push_str("pointer_");
             match ty_and_mut.mutbl {
-                rustc::hir::Mutability::Mutable => str.push_str("mut_"),
-                rustc::hir::Mutability::Immutable => str.push_str("const_"),
+                rustc::hir::Mutability::Mut => str.push_str("mut_"),
+                rustc::hir::Mutability::Not => str.push_str("const_"),
             }
             append_mangled_type(str, ty_and_mut.ty, tcx);
         }
         Ref(_, ty, mutability) => {
             str.push_str("ref_");
-            if mutability == rustc::hir::Mutability::Mutable {
+            if mutability == rustc::hir::Mutability::Mut {
                 str.push_str("mut_");
             }
             append_mangled_type(str, ty, tcx);

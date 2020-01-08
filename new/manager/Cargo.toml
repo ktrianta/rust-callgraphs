@@ -16,23 +16,24 @@ path = "src/main.rs"
 
 [dependencies]
 corpus-extractor = { path = "../extractor" }
-corpus-common = { path = "../common" }
-structopt = "0.2.18"
-color-backtrace = { version = "0.2" }
-log = "0.4.0"
-simplelog = "^0.6.0"
-chrono = "0.4.7"
-reqwest = "0.9.0"
+corpus-database = { path = "../database" }
+structopt = "0.3"
+color-backtrace = "0.3"
+log = "0.4"
+simplelog = "0.7"
+chrono = "0.4"
+reqwest = { version = "0.10.0", features = ["blocking"] }
 serde = "1.0.1"
 serde_derive = "1.0.1"
 serde_json = "1.0.0"
-toml = "0.5.1"
-log-derive = "0.3.0"
+toml = "0.5"
+log-derive = "0.4"
 semver = "0.9.0"
-cargo = "0.37.0"
-tokio-process = "0.2.4"
-tokio = "0.1.22"
+cargo = "0.41.0"
+tokio-process = "0.2"
+tokio = "0.2"
 nix = "0.14.1"
 failure = "0.1.5"
 walkdir = "2"
-rustwide = { version = "0.3.2", features = ["unstable"] }
+rustwide = "0.5.0"
+crates-index = "0.13"

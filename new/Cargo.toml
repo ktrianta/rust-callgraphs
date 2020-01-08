@@ -2,6 +2,8 @@
 members = [
     "database",
     "database-dsl",
+    "extractor",
+    "manager",
 ]
 
 [profile.release]

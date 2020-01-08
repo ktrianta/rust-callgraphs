@@ -13,6 +13,7 @@ extern crate rustc_error_codes;
 extern crate rustc_interface;
 extern crate rustc_metadata;
 extern crate rustc_mir;
+extern crate rustc_span;
 extern crate syntax;
 
 mod check_unsafety;
@@ -28,9 +29,12 @@ use rustc::hir::intravisit::walk_crate;
 use rustc::session::Session;
 use rustc::ty::query::Providers;
 use rustc::ty::TyCtxt;
+use rustc_data_structures::fx::FxHashSet;
 use rustc_interface::interface::Compiler;
 use rustc_interface::Queries;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -40,33 +44,74 @@ struct SharedState {
     /// Does the given function use unsafe operations directly in its body.
     /// (This can be true only for functions marked with `unsafe`.)
     function_unsafe_use: HashMap<DefId, bool>,
+    /// What `cfg!` configuration is enabled for this crate?
+    crate_cfg: Vec<(String, Option<String>)>,
 }
 
 lazy_static! {
     static ref SHARED_STATE: Mutex<SharedState> = Mutex::new(SharedState::default());
 }
 
-fn analyse_with_tcx(name: String, tcx: TyCtxt) {
+fn analyse_with_tcx(name: String, tcx: TyCtxt, session: &Session) {
     let hash = tcx.crate_hash(rustc::hir::def_id::LOCAL_CRATE);
+    let file_name = format!("{}_{}", name, hash.to_string());
     let cargo_pkg_version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let cargo_pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();
+    let mut tables = corpus_database::tables::Tables::default();
+    let build = tables.register_builds(
+        cargo_pkg_name,
+        cargo_pkg_version,
+        name,
+        hash.as_u64().into(),
+        session.opts.edition.to_string(),
+    );
 
-    // TODO:
-    // let _parsed_crate = compiler.parse().unwrap().peek();
-    // let _expanded_crate = compiler.expansion().unwrap().peek();
+    let mut cargo_toml_path: PathBuf = std::env::var("CARGO_MANIFEST_DIR").unwrap().into();
+    cargo_toml_path.push("Cargo.toml");
+    let mut file = File::open(cargo_toml_path).unwrap();
+    let mut cargo_toml_content = String::new();
+    file.read_to_string(&mut cargo_toml_content).unwrap();
+    let cargo_toml = cargo_toml_content.parse::<toml::Value>().unwrap();
+    if let toml::Value::Table(table) = cargo_toml {
+        if let Some(toml::Value::Table(package_table)) = table.get("package") {
+            if let Some(toml::Value::Array(authors)) = package_table.get("authors") {
+                for author in authors {
+                    if let toml::Value::String(name) = author {
+                        tables.register_crate_authors(build, name.to_string());
+                    } else {
+                        unreachable!();
+                    }
+                }
+            }
+            if let Some(toml::Value::Array(keywords)) = package_table.get("keywords") {
+                for keyword in keywords {
+                    if let toml::Value::String(name) = keyword {
+                        tables.register_crate_keywords(build, name.to_string());
+                    } else {
+                        unreachable!();
+                    }
+                }
+            }
+            if let Some(toml::Value::Array(categories)) = package_table.get("categories") {
+                for category in categories {
+                    if let toml::Value::String(name) = category {
+                        tables.register_crate_categories(build, name.to_string());
+                    } else {
+                        unreachable!();
+                    }
+                }
+            }
+        }
+    }
+
+    for crate_type in &session.opts.crate_types {
+        tables.register_build_crate_types(build, crate_type.to_string());
+    }
 
     let hir_map = &tcx.hir();
     let krate = hir_map.krate();
 
-    let file_name = format!("{}_{}", name, hash.to_string());
-    let mut hir_visitor = hir_visitor::HirVisitor::new(
-        name,
-        hash.as_u64(),
-        cargo_pkg_name,
-        cargo_pkg_version,
-        hir_map,
-        tcx,
-    );
+    let mut hir_visitor = hir_visitor::HirVisitor::new(tables, build, session, hir_map, tcx);
 
     walk_crate(&mut hir_visitor, krate);
 
@@ -80,21 +125,42 @@ fn analyse_with_tcx(name: String, tcx: TyCtxt) {
                 .tables
                 .register_function_unsafe_use(def_path, *uses_unsafe);
         }
+        for (key, value) in &state.crate_cfg {
+            filler.tables.register_crate_cfgs(
+                build,
+                key.clone(),
+                value
+                    .as_ref()
+                    .map(String::as_str)
+                    .unwrap_or("n/a")
+                    .to_string(),
+            );
+        }
     }
 
     let tables = filler.tables;
-    let mut path: PathBuf = std::env::var("RUST_CORPUS_DATA_PATH").unwrap().into();
+    let mut path: PathBuf = std::env::var("CARGO_TARGET_DIR").unwrap().into();
+    path.push("rust-corpus");
+    std::fs::create_dir_all(&path).unwrap();
     path.push(file_name);
 
-    tables.save_json(path.clone());
+    if Some("true")
+        == std::env::var("CORPUS_OUTPUT_JSON")
+            .ok()
+            .as_ref()
+            .map(|s| s.as_ref())
+    {
+        tables.save_json(path.clone());
+    }
     tables.save_bincode(path);
 }
 
-pub fn analyse<'tcx>(_compiler: &Compiler, queries: &'tcx Queries<'tcx>) {
+pub fn analyse<'tcx>(compiler: &Compiler, queries: &'tcx Queries<'tcx>) {
     let name = queries.crate_name().unwrap().peek().clone();
+    let session = compiler.session();
 
-    queries.global_ctxt().unwrap().peek_mut().enter(move |tcx| {
-        analyse_with_tcx(name, tcx);
+    queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
+        analyse_with_tcx(name, tcx, session);
     });
 }
 
@@ -117,4 +183,10 @@ fn unsafety_check_result(tcx: TyCtxt<'_>, def_id: DefId) -> rustc::mir::Unsafety
     }
 
     original_unsafety_check_result(tcx, def_id)
+}
+
+/// Save `cfg!` configuration.
+pub fn save_cfg_configuration(set: &FxHashSet<(String, Option<String>)>) {
+    let mut state = SHARED_STATE.lock().unwrap();
+    state.crate_cfg = set.iter().cloned().collect();
 }

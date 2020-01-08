@@ -4,20 +4,20 @@
 
 //! Module responsible for managing the database.
 
+use corpus_database::tables;
 use failure::Error;
 use log::{debug, error, info, trace};
 use log_derive::logfn;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::{ffi, fs, io};
-
-use corpus_common::{database::DatabaseMerger, tables};
 use walkdir;
 
 pub struct DatabaseManager {
     loaded_crates_path: PathBuf,
     loaded_crates: HashSet<PathBuf>,
-    database: DatabaseMerger,
+    database_root: PathBuf,
+    database: tables::Tables,
 }
 
 impl DatabaseManager {
@@ -44,16 +44,17 @@ impl DatabaseManager {
                 .expect("Failed to create the directory for the database");
             HashSet::new()
         };
-        let database = DatabaseMerger::new(&database_root).unwrap();
+        let database = tables::Tables::load_multifile_or_default(&database_root).unwrap();
         Self {
             loaded_crates_path,
             loaded_crates,
+            database_root,
             database,
         }
     }
     #[logfn(Trace)]
     pub fn update_database(&mut self, workspace_root: &Path) {
-        let crates = self.scan_crates(workspace_root);
+        let crates = self.scan_crates(&workspace_root.join("rust-corpus"));
         let mut counter = 0;
         for path in crates {
             trace!("Checking crate: {:?}", path);
@@ -66,9 +67,6 @@ impl DatabaseManager {
                     Ok(()) => {}
                     Err(e) => error!("  Error occurred: {}", e),
                 };
-                if counter >= 1000 {
-                    break;
-                }
             }
         }
         info!("Successfully loaded {} crates", counter);
@@ -82,7 +80,7 @@ impl DatabaseManager {
                 }
             }
         }
-        self.database.save();
+        self.database.store_multifile(&self.database_root).unwrap();
         let mut file = fs::File::create(&self.loaded_crates_path)
             .unwrap_or_else(|e| panic!("Unable to create {:?}: {}", self.loaded_crates_path, e));
         serde_json::to_writer_pretty(&mut file, &self.loaded_crates)

@@ -23,43 +23,22 @@ struct CorpusManagerArgs {
     crate_list_path: PathBuf,
     #[structopt(
         parse(from_os_str),
-        default_value = "LocalCrateList.json",
-        long = "local-crate-list-path",
-        help = "The file with the local paths of all downloaded crates."
-    )]
-    local_archive_index_path: PathBuf,
-    #[structopt(
-        parse(from_os_str),
-        long = "cargo-path",
-        help = "The path to the cargo binary."
-    )]
-    cargo_path: Option<PathBuf>,
-    #[structopt(
-        parse(from_os_str),
-        long = "sccache-path",
-        help = "The path to the sccache binary. (Install via cargo install sccache)."
-    )]
-    sccache_path: Option<PathBuf>,
-    #[structopt(
-        parse(from_os_str),
-        default_value = "compilation-cache",
-        long = "sccache-cache-path",
-        help = "The directory used to store sccache compilation cache."
-    )]
-    sccache_cache_path: PathBuf,
-    #[structopt(
-        parse(from_os_str),
-        long = "rustc-path",
-        help = "The path to the extractor binary."
-    )]
-    rustc_path: Option<PathBuf>,
-    #[structopt(
-        parse(from_os_str),
         default_value = "../workspace",
         long = "workspace",
         help = "The directory in which all crates are compiled."
     )]
-    workspace_root: PathBuf,
+    workspace: PathBuf,
+    #[structopt(
+        default_value = "4000000000",   // 4 GB
+        long = "memory-limit",
+        help = "The memory limit that is set while building a crate. 0 means no limit."
+    )]
+    memory_limit: usize,
+    #[structopt(
+        long = "enable-networking",
+        help = "Should the network be enabled while building a crate?"
+    )]
+    enable_networking: bool,
     #[structopt(
         parse(from_os_str),
         default_value = "../database",
@@ -70,9 +49,15 @@ struct CorpusManagerArgs {
     #[structopt(
         default_value = "900",
         long = "compilation-timeout",
-        help = "The compilation timeout in seconds."
+        help = "The compilation timeout in seconds. 0 means no timeout."
     )]
     compilation_timeout: u64,
+    #[structopt(
+        default_value = "5242880",   // 5 MB
+        long = "max-log-size",
+        help = "The maximum log size per build before it gets truncated (in bytes)."
+    )]
+    max_log_size: usize,
     #[structopt(subcommand)]
     cmd: Command,
 }
@@ -83,13 +68,22 @@ enum Command {
     Init {
         #[structopt(help = "How many top crates to download.")]
         top_count: usize,
-        #[structopt(help = "Download all crate versions or only the newest one.")]
+        #[structopt(long, help = "Download all crate versions or only the newest one.")]
         all_versions: bool,
     },
-    #[structopt(name = "download", about = "Download the list of crates.")]
-    Download,
+    #[structopt(
+        name = "init-all",
+        about = "Initialise the list of crates with all crates."
+    )]
+    InitAll {
+        #[structopt(long, help = "Download all crate versions or only the newest one.")]
+        all_versions: bool,
+    },
     #[structopt(name = "compile", about = "Compile the list of crates.")]
-    Compile,
+    Compile {
+        #[structopt(long, help = "Should the extractor output also json, or only bincode?")]
+        output_json: bool,
+    },
     #[structopt(
         name = "update-database",
         about = "Scan the compiled crates and update the database."
@@ -121,7 +115,8 @@ fn main() {
             Some(logger) => loggers.push(logger as Box<dyn SharedLogger>),
             None => loggers.push(SimpleLogger::new(LevelFilter::Warn, Config::default())),
         }
-        CombinedLogger::init(loggers).unwrap();
+        let logger = CombinedLogger::new(loggers);
+        rustwide::logging::init_with(*logger);
     }
     let args = CorpusManagerArgs::from_args();
     match args.cmd {
@@ -131,26 +126,42 @@ fn main() {
         } => {
             corpus_manager::initialise_with_top(&args.crate_list_path, top_count, all_versions);
         }
-        Command::Download => {
-            corpus_manager::download(&args.crate_list_path, &args.local_archive_index_path);
+        Command::InitAll { all_versions } => {
+            corpus_manager::initialise_with_all(&args.crate_list_path, all_versions);
         }
-        Command::Compile => {
-            fs::create_dir_all(&args.sccache_cache_path)
-                .expect("Failed to create the SCCACHE directory.");
-            let absolute_sccache_cache_path = std::fs::canonicalize(args.sccache_cache_path)
-                .expect("Failed to convert the SCCACHE directory path to absolute.");
+        Command::Compile { output_json } => {
+            let toolchain = {
+                use std::io::Read;
+                let mut file = std::fs::File::open("rust-toolchain")
+                    .expect("Failed to open file “rust-toolchain”.");
+                let mut contents = String::new();
+                file.read_to_string(&mut contents)
+                    .expect("Failed to read “rust-toolchain”.");
+                contents.trim().to_string()
+            };
+            let memory_limit = if args.memory_limit == 0 {
+                None
+            } else {
+                Some(args.memory_limit)
+            };
+            let timeout = if args.compilation_timeout == 0 {
+                None
+            } else {
+                Some(Duration::from_secs(args.compilation_timeout))
+            };
             corpus_manager::compile(
-                &args.local_archive_index_path,
-                &args.cargo_path,
-                &args.sccache_path,
-                &absolute_sccache_cache_path,
-                &args.rustc_path,
-                &args.workspace_root,
-                Duration::from_secs(args.compilation_timeout),
+                &args.crate_list_path,
+                &args.workspace,
+                toolchain,
+                args.max_log_size,
+                memory_limit,
+                timeout,
+                args.enable_networking,
+                output_json,
             );
         }
         Command::UpdateDatabase => {
-            corpus_manager::update_database(&args.workspace_root, &args.database_root)
+            corpus_manager::update_database(&args.workspace, &args.database_root)
         }
     }
 }
