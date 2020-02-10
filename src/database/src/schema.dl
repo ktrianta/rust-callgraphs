@@ -289,6 +289,7 @@ relation submodules(def_path: DefPath, parent: Module, child: auto Module, name:
 /// An item that is a function definition.
 relation function_definitions(item: auto Item, def_path: DefPath, module: Module, visibility: Visibility, unsafety: Unsafety, abi: Abi, return_ty: Type);
 relation function_parameter_types(function: Item, index: FnParamIndex, typ: Type);
+relation function_type(function: Item, typ: Type);
 /// Marks whether a function uses unsafe operations directly in its body.
 /// Only functions marked as `unsafe` can do that.
 relation function_unsafe_use(def_path: DefPath, uses_unsafe: bool);
@@ -345,7 +346,8 @@ relation types_param(typ: Type, index: u32, name: InternedString);
 /// Traits.
 relation traits(item: auto Item, def_path: DefPath, name: InternedString, visibility: Visibility, is_auto: bool, is_marker: bool, unsafety: Unsafety);
 /// Items mentioned inside the trait.
-relation trait_items(trait_id: Item, def_path: DefPath, defaultness: Defaultness);
+relation trait_items(trait_id: Item, def_path: DefPath, name: InternedString, defaultness: Defaultness);
+relation trait_impl_items(impl_id: Item, def_path: DefPath, name: InternedString);
 
 /// Basic blocks.
 /// `is_cleanup` is true if the block is on the unwind path.
@@ -383,3 +385,8 @@ relation terminators_assert(block: BasicBlock, cond: Operand, expected: bool, ta
 relation terminators_yield(block: BasicBlock, value: Operand, resume: BasicBlock, drop: BasicBlock);
 relation terminators_false_edges(block: BasicBlock, real_target: BasicBlock, imaginary_target: BasicBlock);
 relation terminators_false_unwind(block: BasicBlock, real_target: BasicBlock, unwind: BasicBlock);
+
+relation call_graph(call: FunctionCall, caller_def_path: DefPath, callee_def_path: DefPath);
+relation instantiations(call: FunctionCall, instance_def_path: DefPath);
+relation virtual_calls(def_path: DefPath);
+relation generic_calls(def_path: DefPath);
