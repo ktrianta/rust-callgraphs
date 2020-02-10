@@ -1,5 +1,11 @@
 # Rust Call-Graph Generator
 
+## Prerequisites
+
+* Install rust (via rustup).
+* Install the rustc dev component for your distribution via `rustup component add rustc-dev-{your_distro}`.
+* Install docker.
+
 ## How to run
 
 ```
