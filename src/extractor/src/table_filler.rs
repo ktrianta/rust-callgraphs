@@ -5,10 +5,11 @@
 use crate::converters::ConvertInto;
 use crate::mirai_utils;
 use corpus_database::{tables::Tables, types};
-use rustc::hir::{self, map::Map as HirMap, HirId};
+use rustc::hir::{self, def_id::DefId, map::Map as HirMap, HirId};
 use rustc::ty::{self, TyCtxt};
 use rustc_span::hygiene::ExpnKind;
 use rustc_span::Span;
+use rustc_data_structures::fx::FxHashSet;
 use std::collections::HashMap;
 
 use rustc::session::Session;
@@ -18,6 +19,7 @@ pub(crate) struct TableFiller<'a, 'tcx> {
     hir_map: &'a HirMap<'tcx>,
     session: &'a Session,
     pub(crate) tables: Tables,
+    pub(crate) substs_map: HashMap<DefId, FxHashSet<rustc::ty::subst::SubstsRef<'tcx>>>,
     span_registry: HashMap<Span, types::Span>,
     type_registry: HashMap<ty::Ty<'tcx>, types::Type>,
 }
@@ -28,12 +30,14 @@ impl<'a, 'tcx> TableFiller<'a, 'tcx> {
         hir_map: &'a HirMap<'tcx>,
         session: &'a Session,
         tables: Tables,
+        substs_map: HashMap<DefId, FxHashSet<rustc::ty::subst::SubstsRef<'tcx>>>,
     ) -> Self {
         Self {
             tcx,
             hir_map,
             session,
             tables,
+            substs_map,
             span_registry: HashMap::new(),
             type_registry: HashMap::new(),
         }

@@ -7,8 +7,10 @@ use crate::mir_visitor::MirVisitor;
 use crate::rustc::mir::HasLocalDecls;
 use crate::table_filler::TableFiller;
 use corpus_database::{tables::Tables, types};
+use rustc_data_structures::fx::FxHashSet;
 use rustc::hir::{
     self,
+    def_id::DefId,
     intravisit::{self, Visitor},
     map::Map as HirMap,
     HirId,
@@ -18,6 +20,7 @@ use rustc::session::Session;
 use rustc::ty::TyCtxt;
 use std::mem;
 use syntax::source_map::Span;
+use std::collections::HashMap;
 
 pub(crate) struct HirVisitor<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
@@ -30,13 +33,14 @@ pub(crate) struct HirVisitor<'a, 'tcx> {
 impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
     pub fn new(
         mut tables: Tables,
+        substs: HashMap<DefId, FxHashSet<rustc::ty::subst::SubstsRef<'tcx>>>,
         build: types::Build,
         session: &'a Session,
         hir_map: &'a HirMap<'tcx>,
         tcx: TyCtxt<'tcx>,
     ) -> Self {
         let (root_module,) = tables.register_root_modules(build);
-        let filler = TableFiller::new(tcx, hir_map, session, tables);
+        let filler = TableFiller::new(tcx, hir_map, session, tables, substs);
         Self {
             tcx,
             hir_map,
@@ -190,7 +194,7 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
                 ref _generics,
                 ref trait_ref,
                 ref _typ,
-                ref _impls,
+                impl_items,
             ) => {
                 let interned_type = self.filler.register_type(self.tcx.type_of(def_id));
                 let (item_id,) = self.filler.tables.register_impl_definitions(
@@ -208,6 +212,15 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
                     self.filler
                         .tables
                         .register_trait_impls(item_id, interned_type, trait_def_path);
+
+                    for impl_item in impl_items {
+                        let impl_item_def_path = self.filler.resolve_hir_id(impl_item.id.hir_id);
+                        self.filler.tables.register_trait_impl_items(
+                            item_id,
+                            impl_item_def_path,
+                            impl_item.ident.to_string(),
+                        )
+                    }
                 }
                 let old_item = mem::replace(&mut self.current_item, Some(item_id));
                 intravisit::walk_item(self, item);
@@ -241,6 +254,7 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
                     self.filler.tables.register_trait_items(
                         item_id,
                         trait_item_def_path,
+                        trait_item.ident.to_string(),
                         trait_item.defaultness.convert_into(),
                     )
                 }

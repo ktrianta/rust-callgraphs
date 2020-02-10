@@ -7,12 +7,13 @@ use crate::table_filler::TableFiller;
 use corpus_database::types;
 use rustc::hir;
 use rustc::mir;
-use rustc::ty::{self, TyCtxt};
+use rustc::ty::{self, Instance, TyCtxt};
 use std::collections::HashMap;
 
 pub(crate) struct MirVisitor<'a, 'b, 'tcx> {
     tcx: TyCtxt<'tcx>,
     body_path: types::DefPath,
+    body_id: hir::def_id::DefId,
     body: &'a mir::Body<'tcx>,
     filler: &'a mut TableFiller<'b, 'tcx>,
     root_scope: types::Scope,
@@ -32,6 +33,7 @@ impl<'a, 'b, 'tcx> MirVisitor<'a, 'b, 'tcx> {
         Self {
             tcx,
             body_path,
+            body_id,
             body,
             root_scope,
             filler,
@@ -410,11 +412,72 @@ impl<'a, 'b, 'tcx> MirVisitor<'a, 'b, 'tcx> {
                 }
                 match func {
                     mir::Operand::Constant(constant) => {
-                        if let ty::TyKind::FnDef(target_id, _) = constant.literal.ty.kind {
-                            let def_path = self.filler.resolve_def_id(target_id);
+                        if let ty::TyKind::FnDef(id, substs) = constant.literal.ty.kind {
+                            use rustc::ty::ParamEnv;
+                            let mut is_generic = false;
+                            let mut instances = Vec::new();
+                            for typ in substs.types() {
+                                match typ.kind {
+                                    rustc::ty::TyKind::Param(_) => is_generic = true,
+                                    _ => {}
+                                }
+                            }
+                            if let Some(caller_substs_list) = self.filler.substs_map.get(&self.body_id) {
+                                for caller_substs in caller_substs_list {
+                                    let mut updated_substs = Vec::new();
+                                    for subst in substs {
+                                        let subst = self.tcx.subst_and_normalize_erasing_regions(caller_substs, ParamEnv::reveal_all(), subst);
+                                        updated_substs.push(subst);
+                                    }
+                                    let updated_substs = self.tcx.mk_substs(updated_substs.iter());
+                                    let instance_opt = Instance::resolve(self.tcx, ParamEnv::reveal_all(), id, updated_substs);
+                                    if let Some(instance) = instance_opt {
+                                        instances.push(instance);
+                                    }
+                                }
+                            }
+                            for instance in &instances {
+                                if let Some(subs_list) = self.filler.substs_map.get_mut(&instance.def_id()) {
+                                    subs_list.insert(instance.substs);
+                                } else {
+                                    use rustc_data_structures::fx::FxHashSet;
+                                    let mut set: FxHashSet<rustc::ty::subst::SubstsRef> = FxHashSet::default();
+                                    set.insert(instance.substs);
+                                    self.filler.substs_map.insert(instance.def_id(), set);
+                                }
+                            }
+                            let def_path = self.filler.resolve_def_id(id);
                             self.filler
                                 .tables
                                 .register_terminators_call_const_target(function_call, def_path);
+
+                            if is_generic {
+                                for instance in &instances {
+                                    let instance_def_path = self.filler.resolve_def_id(instance.def_id());
+                                    self.filler
+                                        .tables
+                                        .register_instantiations(function_call, instance_def_path);
+                                }
+                            }
+                            if is_generic {
+                                self.filler
+                                    .tables
+                                    .register_call_graph(function_call, self.body_path, def_path);
+                                self.filler
+                                    .tables
+                                    .register_generic_calls(def_path);
+                            } else if !instances.is_empty() {
+                                let instance = instances[0];
+                                let def_path = self.filler.resolve_def_id(instance.def_id());
+                                self.filler
+                                    .tables
+                                    .register_call_graph(function_call, self.body_path, def_path);
+                                if let ty::InstanceDef::Virtual(..) = instance.def {
+                                    self.filler
+                                        .tables
+                                        .register_virtual_calls(def_path);
+                                }
+                            }
                         } else {
                             unreachable!("Unexpected called constant type: {:?}", constant);
                         }

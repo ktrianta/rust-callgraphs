@@ -26,6 +26,7 @@ mod table_filler;
 use lazy_static::lazy_static;
 use rustc::hir::def_id::DefId;
 use rustc::hir::intravisit::walk_crate;
+use rustc::mir::mono::MonoItem;
 use rustc::session::Session;
 use rustc::ty::query::Providers;
 use rustc::ty::TyCtxt;
@@ -37,6 +38,8 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Mutex;
+
+use rustc_mir::monomorphize::collector;
 
 /// The struct to share the state among queries.
 #[derive(Default)]
@@ -111,7 +114,21 @@ fn analyse_with_tcx(name: String, tcx: TyCtxt, session: &Session) {
     let hir_map = &tcx.hir();
     let krate = hir_map.krate();
 
-    let mut hir_visitor = hir_visitor::HirVisitor::new(tables, build, session, hir_map, tcx);
+    let mut substs_map: HashMap<DefId, FxHashSet<rustc::ty::subst::SubstsRef>> = HashMap::new();
+    let (set, _) = collector::collect_crate_mono_items(tcx, collector::MonoItemCollectionMode::Lazy);
+    for item in set.iter() {
+        if let MonoItem::Fn(fn_instance) = item {
+            if let Some(substs_list) = substs_map.get_mut(&fn_instance.def_id()) {
+                substs_list.insert(fn_instance.substs);
+            } else {
+                let mut set: FxHashSet<rustc::ty::subst::SubstsRef> = FxHashSet::default();
+                set.insert(fn_instance.substs);
+                substs_map.insert(fn_instance.def_id(), set);
+            }
+        }
+    }
+
+    let mut hir_visitor = hir_visitor::HirVisitor::new(tables, substs_map, build, session, hir_map, tcx);
 
     walk_crate(&mut hir_visitor, krate);
 
