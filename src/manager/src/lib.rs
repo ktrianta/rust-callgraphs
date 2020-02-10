@@ -5,7 +5,7 @@
 //! Library for managing crate sources.
 
 mod compilation;
-mod database;
+pub mod database;
 mod sources_list;
 mod top_crates;
 

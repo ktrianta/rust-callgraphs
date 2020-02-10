@@ -156,22 +156,23 @@ impl<'a> CrateCompiler<'a> {
                 let mut storage = LogStorage::new(LevelFilter::Info);
                 storage.set_max_size(self.max_log_size);
 
-                let successful = logging::capture(&storage, || {
+                let result = logging::capture(&storage, || {
                     let mut builder = build
                         .cargo()
                         .timeout(self.timeout)
-                        .args(&["check"])
+                        .args(&["build"])
                         .env("RUST_BACKTRACE", "1")
+                        .env("CARGO_INCREMENTAL", "0")
                         .env("SYSROOT", sysroot)
                         .env("RUSTC", "/opt/rustwide/cargo-home/rustc");
                     if self.output_json {
                         builder = builder.env("CORPUS_OUTPUT_JSON", "true");
                     }
-                    builder.run().is_ok()
+                    builder.run()
                 });
                 let mut target_dir = build.host_target_dir();
                 target_dir.push("rust-corpus");
-                if successful {
+                if result.is_ok() {
                     let success_marker = target_dir.join("success");
                     std::fs::write(success_marker, format!("{:?}", chrono::offset::Utc::now()))?;
                 }
@@ -185,7 +186,7 @@ impl<'a> CrateCompiler<'a> {
                         std::fs::rename(path, crate_extracted_files.join(file_name))?;
                     }
                 }
-                Ok(())
+                result
             })?;
         Ok(())
     }
