@@ -29,11 +29,11 @@ pub(crate) fn generate_tokens(schema: ast::DatabaseSchema) -> TokenStream {
             #[derive(Default, Deserialize, Serialize)]
             pub struct Tables {
                 /// Relations between Rust program elements.
-                pub(crate) relations: Relations,
+                pub relations: Relations,
                 /// Counters used for generating ids.
-                pub(crate) counters: Counters,
+                pub counters: Counters,
                 /// Interning tables that link typed ids to untyped interning ids.
-                pub(crate) interning_tables: InterningTables,
+                pub interning_tables: InterningTables,
             }
 
             impl Tables {
@@ -484,7 +484,7 @@ fn generate_merge_functions(schema: &ast::DatabaseSchema) -> TokenStream {
         let name = &table.name;
         if let syn::Type::Tuple(ref values) = table.value {
             tuple_iterning_tables.push((table, values));
-        } else {
+        } else if name == "strings" {
             tokens.extend(quote! {
                 let #name: HashMap<_, _> = other
                    .interning_tables
@@ -492,6 +492,20 @@ fn generate_merge_functions(schema: &ast::DatabaseSchema) -> TokenStream {
                    .into_iter()
                    .map(|(key, value)| {
                        let new_key = self.interning_tables.#name.intern(value);
+                       (key, new_key)
+                   })
+                   .collect();
+            });
+            interning_remap.insert(table.get_key_type(), name);
+        } else {
+            tokens.extend(quote! {
+                let #name: HashMap<_, _> = other
+                   .interning_tables
+                   .#name
+                   .into_iter()
+                   .map(|(key, value)| {
+                       let new_value = strings[&value];
+                       let new_key = self.interning_tables.#name.intern(new_value);
                        (key, new_key)
                    })
                    .collect();
