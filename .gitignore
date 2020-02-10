@@ -1,11 +1,4 @@
-.vagrant
-ubuntu-bionic-18.04-cloudimg-console.log
-data/cache
-data/compilation/Cargo.lock
-data/compilation/Cargo.toml
-data/compilation/target
-data/compile.log
-data/crate-information.json
-data/crates
+database
+workspace
 *.swp
 .idea
