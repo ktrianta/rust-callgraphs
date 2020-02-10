@@ -104,6 +104,12 @@ where
             .enumerate()
             .map(|(k, v)| (k.into(), v))
     }
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (K, &'a V)> {
+        self.contents
+            .iter()
+            .enumerate()
+            .map(|(k, v)| (k.into(), v))
+    }
     pub fn len(&self) -> usize {
         self.contents.len()
     }
