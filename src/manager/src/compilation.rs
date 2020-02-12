@@ -128,11 +128,8 @@ impl<'a> CrateCompiler<'a> {
         }
     }
     fn build(&self, krate_info: &'a CrateInfo) -> Result<(), Box<dyn std::error::Error>> {
-        let crate_extracted_files = self.extracted_files_path.join(format!(
-            "{}-{}",
-            krate_info.name(),
-            krate_info.version()
-        ));
+        let crate_name_info = format!("{}-{}", krate_info.name(), krate_info.version());
+        let crate_extracted_files = self.extracted_files_path.join(&crate_name_info);
         if crate_extracted_files.exists() {
             info!("Already compiled: {}", crate_extracted_files.display());
             return Ok(());
@@ -142,7 +139,7 @@ impl<'a> CrateCompiler<'a> {
         let sandbox = SandboxBuilder::new()
             .memory_limit(self.memory_limit)
             .enable_networking(self.enable_networking);
-        let mut build_dir = self.workspace.build_dir("corpus");
+        let mut build_dir = self.workspace.build_dir(&crate_name_info);
         build_dir.purge()?;
         let toolchain = self.toolchain.as_dist().unwrap().name();
         let sysroot = format!(
