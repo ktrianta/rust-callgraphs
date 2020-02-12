@@ -80,6 +80,16 @@ Run the analysis on the data stored in the "database", basically all the compile
 
 The analysis code can be found under `src/analysis`. Run with `cargo run --release > callgraph.json`.
 
+### An example run with the top 10 crates on crates.io
+
+```
+cargo run --release init 10
+cargo run --release compile
+cargo run --release update-database
+cd analysis
+cargo run --release > callgraph.json
+```
+
 ## Available command line arguments
 
 ```
