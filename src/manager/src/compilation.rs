@@ -3,7 +3,7 @@
 use super::sources_list::Crate as CrateInfo;
 use crate::sources_list::CratesList;
 use log::LevelFilter;
-use log::{error, info};
+use log::{debug, error, info};
 use log_derive::logfn;
 use rustwide::logging::{self, LogStorage};
 use rustwide::{cmd::SandboxBuilder, Crate, Toolchain, Workspace, WorkspaceBuilder};
@@ -85,13 +85,14 @@ impl CompileManager {
         let out_dir: PathBuf = env!("OUT_DIR").into();
         let rustc_path = out_dir.join("../../../rustc").canonicalize()?;
         let dest_path = self.workspace.join("cargo-home/rustc");
-        std::fs::copy(&rustc_path, &dest_path).unwrap_or_else(|_| {
-            panic!(
-                "couldn't copy '{}' to '{}'",
+        if let Err(error) = std::fs::copy(&rustc_path, &dest_path) {
+            debug!(
+                "couldn't copy '{}' to '{}': {}",
                 rustc_path.display(),
-                dest_path.display()
-            )
-        });
+                dest_path.display(),
+                error
+            );
+        };
         Ok(())
     }
 }
