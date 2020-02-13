@@ -67,17 +67,6 @@ where
     }
 }
 
-pub fn load_or_default<T>(path: &Path) -> LoadResult<T>
-where
-    for<'de> T: Deserialize<'de> + Default,
-{
-    if path.exists() {
-        load(path)
-    } else {
-        Ok(T::default())
-    }
-}
-
 pub fn save<T>(object: &T, path: &Path)
 where
     T: Serialize,

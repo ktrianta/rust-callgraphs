@@ -15,7 +15,7 @@ use walkdir;
 
 pub struct DatabaseManager {
     loaded_crates_path: PathBuf,
-    loaded_crates: HashSet<PathBuf>,
+    loaded_crates: HashSet<String>,
     database_root: PathBuf,
     database: tables::Tables,
 }
@@ -24,7 +24,7 @@ impl DatabaseManager {
     pub fn new(database_root: &Path) -> Self {
         let database_root = database_root.to_path_buf();
         let loaded_crates_path = database_root.join("loaded_crates.json");
-        let loaded_crates = if database_root.exists() {
+        let (loaded_crates, database) = if database_root.exists() {
             // The database already contains some crates.
             let file = fs::File::open(&loaded_crates_path).unwrap_or_else(|e| {
                 panic!(
@@ -33,18 +33,21 @@ impl DatabaseManager {
                     loaded_crates_path, e
                 )
             });
-            serde_json::from_reader(file).unwrap_or_else(|e| {
+            let loaded_crates = serde_json::from_reader(file).unwrap_or_else(|e| {
                 panic!(
                     "The database state is corrupted. The crates list is invalid JSON {:?}: {}",
                     loaded_crates_path, e
                 )
-            })
+            });
+            (
+                loaded_crates,
+                tables::Tables::load_multifile(&database_root).unwrap(),
+            )
         } else {
             fs::create_dir_all(&database_root)
                 .expect("Failed to create the directory for the database");
-            HashSet::new()
+            (HashSet::new(), tables::Tables::default())
         };
-        let database = tables::Tables::load_multifile_or_default(&database_root).unwrap();
         Self {
             loaded_crates_path,
             loaded_crates,
@@ -58,12 +61,13 @@ impl DatabaseManager {
         let mut counter = 0;
         for path in crates {
             trace!("Checking crate: {:?}", path);
-            if self.loaded_crates.contains(&path) {
-                debug!("Crate already loaded: {:?}", path);
+            let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+            if self.loaded_crates.contains(&file_name) {
+                debug!("Crate already loaded: {:?} {}", path, file_name);
             } else {
                 info!("Loading crate ({}): {:?}", counter, path);
                 counter += 1;
-                match self.load_crate(path) {
+                match self.load_crate(file_name, path) {
                     Ok(()) => {}
                     Err(e) => error!("  Error occurred: {}", e),
                 };
@@ -81,10 +85,12 @@ impl DatabaseManager {
             }
         }
         self.database.store_multifile(&self.database_root).unwrap();
+        info!("Successfully updated the database");
         let mut file = fs::File::create(&self.loaded_crates_path)
             .unwrap_or_else(|e| panic!("Unable to create {:?}: {}", self.loaded_crates_path, e));
         serde_json::to_writer_pretty(&mut file, &self.loaded_crates)
             .unwrap_or_else(|e| panic!("Unable to write {:?}: {}", self.loaded_crates_path, e));
+        info!("Successfully saved the loaded crates list");
     }
     fn scan_crates(&self, workspace_root: &Path) -> impl Iterator<Item = PathBuf> {
         walkdir::WalkDir::new(workspace_root.canonicalize().unwrap())
@@ -94,10 +100,10 @@ impl DatabaseManager {
             .filter(|path| path.extension() == Some(ffi::OsStr::new("bincode")))
     }
     #[logfn(Trace)]
-    fn load_crate(&mut self, crate_path: PathBuf) -> Result<(), Error> {
+    fn load_crate(&mut self, file_name: String, crate_path: PathBuf) -> Result<(), Error> {
         let crate_tables = tables::Tables::load(&crate_path)?;
         self.database.merge(crate_tables);
-        self.loaded_crates.insert(crate_path);
+        self.loaded_crates.insert(file_name);
         Ok(())
     }
 }

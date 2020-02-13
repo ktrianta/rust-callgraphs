@@ -616,7 +616,7 @@ fn generate_load_save_functions(schema: &ast::DatabaseSchema) -> TokenStream {
     let store_interning_tables = store_multifle_interning_function(schema);
     quote! {
         impl Tables {
-            pub fn load_multifile_or_default(
+            pub fn load_multifile(
                 database_root: &Path
             ) -> Result<Tables, Error> {
                 let relations = load_multifile_relations(&database_root.join("relations"))?;
@@ -662,7 +662,7 @@ fn load_multifile_relations_function(schema: &ast::DatabaseSchema) -> TokenStrea
     for ast::Relation { ref name, .. } in &schema.relations {
         let file_name = format!("{}.bincode", name);
         load_fields.extend(quote! {
-            #name: crate::storage::load_or_default(&path.join(#file_name))?,
+            #name: crate::storage::load(&path.join(#file_name))?,
         });
     }
     quote! {
@@ -695,7 +695,7 @@ fn store_multifile_relations_function(schema: &ast::DatabaseSchema) -> TokenStre
 fn load_counters_function() -> TokenStream {
     quote! {
         fn load_counters(path: &Path) -> Result<Counters, Error> {
-            crate::storage::load_or_default(&path)
+            crate::storage::load(&path)
         }
     }
 }
@@ -713,7 +713,7 @@ fn load_multifle_interning_function(schema: &ast::DatabaseSchema) -> TokenStream
     for ast::InterningTable { ref name, .. } in &schema.interning_tables {
         let file_name = format!("{}.bincode", name);
         load_fields.extend(quote! {
-            #name: crate::storage::load_or_default(&path.join(#file_name))?,
+            #name: crate::storage::load(&path.join(#file_name))?,
         });
     }
     quote! {

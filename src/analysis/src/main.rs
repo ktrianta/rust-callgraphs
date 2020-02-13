@@ -278,7 +278,7 @@ impl CallGraphAnalysis {
 
 fn main() {
     let database_root = Path::new("../../database");
-    let tables = Tables::load_multifile_or_default(database_root).unwrap();
+    let tables = Tables::load_multifile(database_root).unwrap();
     let mut analysis = CallGraphAnalysis::new(tables);
     // println!("Loaded database");
 
