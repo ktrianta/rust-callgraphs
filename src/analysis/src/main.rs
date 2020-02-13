@@ -28,6 +28,12 @@ struct Node {
     pub relative_def_path: String,
 }
 
+#[derive(Serialize, Deserialize)]
+struct NodeInfo {
+    pub id: usize,
+    pub num_lines: i32,
+}
+
 type NodeId = usize;
 
 #[derive(Serialize, Deserialize)]
@@ -37,6 +43,8 @@ struct CallGraph {
     // Call-graph edges, i.e., caller function calls callee function.
     // The boolean value indicates if the call is statically dispatched.
     pub edges: Vec<(NodeId, NodeId, bool)>,
+    // Extra node information
+    pub nodes_info: Vec<NodeInfo>,
     #[serde(skip_serializing)]
     node_registry: HashMap<DefPath, usize>,
 }
@@ -46,6 +54,7 @@ impl CallGraph {
         Self {
             nodes: Vec::new(),
             edges: Vec::new(),
+            nodes_info: Vec::new(),
             node_registry: HashMap::new(),
         }
     }
@@ -55,6 +64,7 @@ impl CallGraph {
         package: String,
         crate_name: String,
         relative_def_path: String,
+        num_lines: i32,
     ) -> NodeId {
         assert!(!self.node_registry.contains_key(def_path));
         let id = self.node_registry.len();
@@ -64,6 +74,10 @@ impl CallGraph {
             package,
             crate_name,
             relative_def_path,
+        });
+        self.nodes_info.push(NodeInfo {
+            id,
+            num_lines,
         });
         id
     }
@@ -97,6 +111,10 @@ struct CallGraphAnalysis {
     generic_calls_instantiations: HashMap<FunctionCall, Vec<DefPath>>,
     // Mapping from crate hash to package information.
     package_info: HashMap<CrateHash, (Package, PackageVersion)>,
+    // The following three maps capture function scopes and location information.
+    functions_scopes: HashMap<DefPath, Scope>,
+    scopes_spans: HashMap<Scope, Span>,
+    spans_locations: HashMap<Span, SpanLocation>,
     // Interning tables.
     interning_tables: InterningTables,
 }
@@ -151,6 +169,18 @@ impl CallGraphAnalysis {
                 generic_calls_instantiations.insert(*call_id, vec![*instantiation]);
             }
         }
+        let mut functions_scopes = HashMap::new();
+        for (_, def_path, scope) in tables.relations.mir_cfgs.iter() {
+            functions_scopes.insert(*def_path, *scope);
+        }
+        let mut scopes_spans = HashMap::new();
+        for (scope, _, _, span) in tables.relations.subscopes.iter() {
+            scopes_spans.insert(*scope, *span);
+        }
+        let mut spans_locations = HashMap::new();
+        for (span, _, _, location) in tables.relations.spans.iter() {
+            spans_locations.insert(*span, *location);
+        }
         let mut package_info = HashMap::new();
         for (_, (pkg, version, _, crate_hash, _)) in tables.interning_tables.builds.iter() {
             if package_info.get(crate_hash).is_none() {
@@ -167,12 +197,29 @@ impl CallGraphAnalysis {
             trait_ids,
             generic_calls_instantiations,
             package_info,
+            functions_scopes,
+            scopes_spans,
+            spans_locations,
             interning_tables: tables.interning_tables,
         }
     }
     fn relative_def_path_string(&self, def_path: RelativeDefId) -> String {
         let interned_string = self.interning_tables.relative_def_paths[def_path];
         self.interning_tables.strings[interned_string].clone()
+    }
+    fn functions_num_lines(&self, def_path: &DefPath) -> i32 {
+        if let Some(scope) = self.functions_scopes.get(def_path) {
+            use std::str::FromStr;
+            let span = self.scopes_spans[&scope];
+            let location = self.spans_locations[&span];
+            let interned_string = self.interning_tables.span_locations[location];
+            let string = &self.interning_tables.strings[interned_string];
+            let tokens: Vec<&str> = string.split(':').collect();
+            let n = tokens.len();
+            i32::from_str(&tokens[n-2][1..]).unwrap_or(0) - i32::from_str(tokens[n-4]).unwrap_or(0)
+        } else {
+            0
+        }
     }
     #[allow(dead_code)]
     fn summary_key_string(&self, summary_id: SummaryId) -> String {
@@ -193,7 +240,7 @@ impl CallGraphAnalysis {
                 self.interning_tables.strings[version_interned_string]
             )
         } else {
-            String::from("*unavailable package information*")
+            String::from("NULL")
         }
     }
     fn add_or_get_callgraph_node(&self, callgraph: &mut CallGraph, def_path: &DefPath) -> NodeId {
@@ -205,7 +252,8 @@ impl CallGraphAnalysis {
             let crate_name = self.crate_name_string(crate_name_id);
             let relative_def_path = self.relative_def_path_string(relative_def_id);
             let package = self.package_string(&crate_hash_id);
-            callgraph.add_node(def_path, package, crate_name, relative_def_path)
+            let num_lines = self.functions_num_lines(&def_path);
+            callgraph.add_node(def_path, package, crate_name, relative_def_path, num_lines)
         }
     }
     fn run(&mut self) -> CallGraph {
