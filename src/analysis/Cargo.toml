@@ -11,3 +11,4 @@ corpus-database = { path = "../database" }
 corpus-manager = { path = "../manager" }
 serde = "1.0.104"
 serde_json = "1.0.47"
+structopt = "0.3"

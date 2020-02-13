@@ -35,6 +35,7 @@ dependencies = [
  "corpus-manager",
  "serde",
  "serde_json",
+ "structopt",
 ]
 
 [[package]]

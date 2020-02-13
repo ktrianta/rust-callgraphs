@@ -78,7 +78,11 @@ the `update-database` command to add the extracted knowledge into the database.
 
 Run the analysis on the data stored in the "database", basically all the compiled packages and their dependencies.
 
-The analysis code can be found under `src/analysis`. Run with `cargo run --release > callgraph.json`.
+The analysis code can be found under `src/analysis`. Run with `cargo run --release [-- --database <database-root>] > callgraph.json`.
+
+Possible command line options:
+* **--database &lt;database-root&gt;**
+    The directory in which the database is stored. [default: ../../database]
 
 ### An example run with the top 10 crates on crates.io
 
