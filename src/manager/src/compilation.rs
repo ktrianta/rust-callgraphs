@@ -55,7 +55,9 @@ impl CompileManager {
     }
     #[logfn(Trace)]
     pub fn compile_all(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let workspace = WorkspaceBuilder::new(&self.workspace, "rust-corpus").init()?;
+        let workspace_builder = WorkspaceBuilder::new(&self.workspace, "rust-corpus")
+            .running_inside_docker(std::env::var("RUNNING_INSIDE_DOCKER").is_ok());
+        let workspace = workspace_builder.init()?;
         let toolchain = Toolchain::dist(&self.toolchain);
         toolchain.install(&workspace)?;
         toolchain.add_component(&workspace, "rustc-dev")?;
