@@ -25,6 +25,8 @@ pub struct CompileManager {
     timeout: Option<Duration>,
     /// Should the network be enabled while building a crate?
     enable_networking: bool,
+    /// Should the whole compilation process stop on crate compilation error?
+    stop_on_error: bool,
     /// Should the extractor output also json, or only bincode?
     output_json: bool,
 }
@@ -38,6 +40,7 @@ impl CompileManager {
         memory_limit: Option<usize>,
         timeout: Option<Duration>,
         enable_networking: bool,
+        stop_on_error: bool,
         output_json: bool,
     ) -> Self {
         Self {
@@ -50,6 +53,7 @@ impl CompileManager {
             memory_limit: memory_limit,
             timeout: timeout,
             enable_networking: enable_networking,
+            stop_on_error: stop_on_error,
             output_json: output_json,
         }
     }
@@ -75,7 +79,12 @@ impl CompileManager {
             );
             match compiler.build(krate) {
                 Ok(_) => info!("Compilation succeeded."),
-                Err(error) => error!("Compilation failed: {}", error),
+                Err(error) => {
+                    error!("Compilation failed: {}", error);
+                    if self.stop_on_error {
+                        return Err(error);
+                    }
+                }
             }
         }
         Ok(())

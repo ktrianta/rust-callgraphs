@@ -40,6 +40,11 @@ struct CorpusManagerArgs {
     )]
     enable_networking: bool,
     #[structopt(
+        long = "stop-on-error",
+        help = "On crate compilation error, stop and ignore the remaining to be compiled crates."
+    )]
+    stop_on_error: bool,
+    #[structopt(
         parse(from_os_str),
         default_value = "../database",
         long = "database",
@@ -157,6 +162,7 @@ fn main() {
                 memory_limit,
                 timeout,
                 args.enable_networking,
+                args.stop_on_error,
                 output_json,
             );
         }

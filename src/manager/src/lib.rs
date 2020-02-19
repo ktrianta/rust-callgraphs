@@ -38,6 +38,7 @@ pub fn compile(
     memory_limit: Option<usize>,
     timeout: Option<Duration>,
     enable_networking: bool,
+    stop_on_error: bool,
     output_json: bool,
 ) {
     let crates_list = CratesList::load(sources_list_path);
@@ -49,6 +50,7 @@ pub fn compile(
         memory_limit,
         timeout,
         enable_networking,
+        stop_on_error,
         output_json,
     );
     manager
