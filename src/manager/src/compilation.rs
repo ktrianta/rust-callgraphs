@@ -164,7 +164,6 @@ impl<'a> CrateCompiler<'a> {
             .run(|build| {
                 let mut storage = LogStorage::new(LevelFilter::Info);
                 storage.set_max_size(self.max_log_size);
-
                 let result = logging::capture(&storage, || {
                     let mut builder = build
                         .cargo()
@@ -179,8 +178,8 @@ impl<'a> CrateCompiler<'a> {
                     }
                     builder.run()
                 });
-                let mut target_dir = build.host_target_dir();
-                target_dir.push("rust-corpus");
+                let target_dir = build.host_target_dir().join("rust-corpus");
+                std::fs::create_dir_all(&target_dir)?;
                 if result.is_ok() {
                     let success_marker = target_dir.join("success");
                     std::fs::write(success_marker, format!("{:?}", chrono::offset::Utc::now()))?;
