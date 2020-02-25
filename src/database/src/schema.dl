@@ -318,7 +318,7 @@ relation crate_keywords(build: Build, keyword: InternedString);
 /// Crate categories.
 relation crate_categories(build: Build, category: InternedString);
 /// A marker that `def_path` is a type.
-relation type_defs(item: auto Item, typ: Type, def_path: DefPath, name: InternedString, visibility: Visibility);
+relation type_defs(item: auto Item, typ: Type, def_path: DefPath, module: Module, name: InternedString, visibility: Visibility);
 relation types(typ: auto Type, kind: TyKind);
 relation types_primitive(typ: Type, primitive_kind: TyPrimitive);
 relation types_adt_def(typ: Type, def_path: DefPath, kind: AdtKind, c_repr: bool, is_phantom: bool);
@@ -344,7 +344,7 @@ relation types_opaque(typ: Type, def_path: DefPath);
 relation types_param(typ: Type, index: u32, name: InternedString);
 
 /// Traits.
-relation traits(item: auto Item, def_path: DefPath, name: InternedString, visibility: Visibility, is_auto: bool, is_marker: bool, unsafety: Unsafety);
+relation traits(item: auto Item, def_path: DefPath, module: Module, name: InternedString, visibility: Visibility, is_auto: bool, is_marker: bool, unsafety: Unsafety);
 /// Items mentioned inside the trait.
 relation trait_items(trait_id: Item, def_path: DefPath, name: InternedString, defaultness: Defaultness);
 relation trait_impl_items(impl_id: Item, def_path: DefPath, name: InternedString);

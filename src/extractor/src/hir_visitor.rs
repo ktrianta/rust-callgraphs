@@ -7,7 +7,6 @@ use crate::mir_visitor::MirVisitor;
 use crate::rustc::mir::HasLocalDecls;
 use crate::table_filler::TableFiller;
 use corpus_database::{tables::Tables, types};
-use rustc_data_structures::fx::FxHashSet;
 use rustc::hir::{
     self,
     def_id::DefId,
@@ -18,9 +17,10 @@ use rustc::hir::{
 use rustc::mir;
 use rustc::session::Session;
 use rustc::ty::TyCtxt;
+use rustc_data_structures::fx::FxHashSet;
+use std::collections::HashMap;
 use std::mem;
 use syntax::source_map::Span;
-use std::collections::HashMap;
 
 pub(crate) struct HirVisitor<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
@@ -131,10 +131,13 @@ impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
         visibility: types::Visibility,
     ) -> types::Item {
         let typ = self.filler.register_type(self.tcx.type_of(def_id));
-        let (item,) =
-            self.filler
-                .tables
-                .register_type_defs(typ, def_path, name.to_string(), visibility);
+        let (item,) = self.filler.tables.register_type_defs(
+            typ,
+            def_path,
+            self.current_module,
+            name.to_string(),
+            visibility,
+        );
         item
     }
     /// Retrieves the parameter types and the return type for the function with `def_id`.
@@ -243,6 +246,7 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
                 let is_marker = self.tcx.trait_def(def_id).is_marker;
                 let (item_id,) = self.filler.tables.register_traits(
                     def_path,
+                    self.current_module,
                     name.to_string(),
                     visibility,
                     is_auto.convert_into(),

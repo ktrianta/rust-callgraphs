@@ -1,5 +1,5 @@
 use crate::callgraph::{CallGraph, NodeId};
-use crate::info::{FunctionsInfo, InterningInfo};
+use crate::info::{FunctionsInfo, InterningInfo, TypeInfo};
 use corpus_database::tables::Tables;
 use corpus_database::types::*;
 use std::collections::{HashMap, HashSet};
@@ -11,17 +11,9 @@ pub struct CallGraphAnalysis<'a> {
     virtual_calls: HashSet<DefPath>,
     // Call-graph.
     call_graph: Vec<(FunctionCall, DefPath, DefPath)>,
-    // Mapping from trait def_path to vector of its impl ids.
-    traits_impls: HashMap<DefPath, Vec<Item>>,
-    // Mapping from trait impl id to map of item_name to item_def_path.
-    traits_impl_items: HashMap<Item, HashMap<InternedString, DefPath>>,
-    // Mapping from trait item def_path to tuple (trait_id, item_name, item_defaultness).
-    trait_items: HashMap<DefPath, (Item, InternedString, Defaultness)>,
-    // Mapping from trait id (item) to tuple (def_path, name).
-    trait_ids: HashMap<Item, (DefPath, InternedString)>,
     // Mapping from generic function to its instantiations.
     generic_calls_instantiations: HashMap<FunctionCall, Vec<DefPath>>,
-
+    type_info: TypeInfo,
     functions_info: FunctionsInfo<'a>,
     interning_info: InterningInfo<'a>,
 }
@@ -40,34 +32,6 @@ impl<'a> CallGraphAnalysis<'a> {
         for (call_id, caller, callee) in tables.relations.call_graph.iter() {
             call_graph.push((*call_id, *caller, *callee));
         }
-        let mut traits_impls: HashMap<DefPath, Vec<Item>> = HashMap::new();
-        for (impl_id, _, trait_def_path) in tables.relations.trait_impls.iter() {
-            if let Some(impl_ids) = traits_impls.get_mut(trait_def_path) {
-                impl_ids.push(*impl_id);
-            } else {
-                traits_impls.insert(*trait_def_path, vec![*impl_id]);
-            }
-        }
-        let mut traits_impl_items: HashMap<Item, HashMap<InternedString, DefPath>> = HashMap::new();
-        for (impl_id, item_def_path, item_name) in tables.relations.trait_impl_items.iter() {
-            if let Some(items) = traits_impl_items.get_mut(impl_id) {
-                items.insert(*item_name, *item_def_path);
-            } else {
-                let mut items = HashMap::new();
-                items.insert(*item_name, *item_def_path);
-                traits_impl_items.insert(*impl_id, items);
-            }
-        }
-        let mut trait_items = HashMap::new();
-        for (trait_id, item_def_path, item_name, item_defaultness) in
-            tables.relations.trait_items.iter()
-        {
-            trait_items.insert(*item_def_path, (*trait_id, *item_name, *item_defaultness));
-        }
-        let mut trait_ids = HashMap::new();
-        for (id, def_path, name, _, _, _, _) in tables.relations.traits.iter() {
-            trait_ids.insert(*id, (*def_path, *name));
-        }
         let mut generic_calls_instantiations: HashMap<FunctionCall, Vec<DefPath>> = HashMap::new();
         for (call_id, instantiation) in tables.relations.instantiations.iter() {
             if let Some(instantiations) = generic_calls_instantiations.get_mut(call_id) {
@@ -80,11 +44,8 @@ impl<'a> CallGraphAnalysis<'a> {
             generic_calls,
             virtual_calls,
             call_graph,
-            traits_impls,
-            traits_impl_items,
-            trait_items,
-            trait_ids,
             generic_calls_instantiations,
+            type_info: TypeInfo::new(tables),
             functions_info: FunctionsInfo::new(tables),
             interning_info: InterningInfo::new(&tables.interning_tables),
         }
@@ -152,22 +113,20 @@ impl<'a> CallGraphAnalysis<'a> {
         &'a self,
         function_def_path: &DefPath,
     ) -> Result<Vec<DefPath>, Box<dyn std::error::Error>> {
-        let (trait_id, function_name, defaultness) = self
+        let (function_name, defaultness, trait_def_path) = self
+            .type_info
             .trait_items
             .get(function_def_path)
             .ok_or("Trait method is not registered as a trait item.")?;
-        let (trait_def_path, _) = self
-            .trait_ids
-            .get(trait_id)
-            .ok_or("Trait is not registered.")?;
         let trait_impls = self
-            .traits_impls
+            .type_info
+            .trait_to_impls
             .get(trait_def_path)
             .ok_or("Trait is not registered for impls.")?;
         let mut is_implemented_by_all = true;
         let mut resolved_functions = Vec::new();
         for trait_impl in trait_impls {
-            if let Some(items) = self.traits_impl_items.get(trait_impl) {
+            if let Some(items) = self.type_info.trait_impl_to_items.get(trait_impl) {
                 if let Some(item) = items.get(function_name) {
                     resolved_functions.push(*item);
                     continue;
