@@ -195,4 +195,16 @@ impl TypeInfo {
             trait_items,
         }
     }
+    pub fn iter_adt_def_paths(&self) -> impl Iterator<Item = &DefPath> {
+        self.adts.iter().map(|(def_path, (_, _, _))| def_path)
+    }
+    pub fn iter_trait_def_paths(&self) -> impl Iterator<Item = &DefPath> {
+        self.traits.iter().map(|(def_path, (_, _, _))| def_path)
+    }
+    pub fn iter_impl_def_paths(&self) -> impl Iterator<Item = &DefPath> {
+        self.impls.iter().map(|(def_path, (_, _))| def_path)
+    }
+    pub fn get_impl_related_def_paths(&self, def_path: &DefPath) -> (Option<DefPath>, DefPath) {
+        self.impls[def_path]
+    }
 }

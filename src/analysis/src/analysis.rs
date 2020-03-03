@@ -1,5 +1,6 @@
 use crate::callgraph::{CallGraph, NodeId};
 use crate::info::{FunctionsInfo, InterningInfo, TypeInfo};
+use crate::types::TypeHierarchy;
 use corpus_database::tables::Tables;
 use corpus_database::types::*;
 use std::collections::{HashMap, HashSet};
@@ -108,6 +109,10 @@ impl<'a> CallGraphAnalysis<'a> {
             }
         }
         callgraph
+    }
+    pub fn types(&self) -> TypeHierarchy {
+        let types = TypeHierarchy::new(&self.type_info, &self.interning_info);
+        types
     }
     fn resolve_virtual_call(
         &'a self,

@@ -16,6 +16,13 @@ struct CMDArgs {
         help = "The directory in which the database is stored."
     )]
     database_root: PathBuf,
+    #[structopt(
+        parse(from_os_str),
+        default_value = "type_hierarchy.json",
+        long = "type-hierarchy",
+        help = "The file in which the type-hierarchy is stored."
+    )]
+    type_hierarchy_file_path: PathBuf,
 }
 
 fn main() {
@@ -27,4 +34,7 @@ fn main() {
 
     let callgraph = analysis.run();
     println!("{}", serde_json::to_string_pretty(&callgraph).unwrap());
+
+    let types = analysis.types();
+    types.save(&args.type_hierarchy_file_path);
 }
