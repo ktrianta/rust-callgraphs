@@ -34,7 +34,7 @@ impl<'a> InterningInfo<'a> {
         let interned_string = self.interning_tables.span_locations[location];
         self.interning_tables.strings[interned_string].clone()
     }
-    pub fn relative_def_id_to_string(&self, def_path: &DefPath) -> String {
+    pub fn def_path_to_string(&self, def_path: &DefPath) -> String {
         let (_, _, relative_def_id, _, _) = self.interning_tables.def_paths[*def_path];
         let interned_string = self.interning_tables.relative_def_paths[relative_def_id];
         self.interning_tables.strings[interned_string].clone()

@@ -55,13 +55,13 @@ impl<'a> CallGraphAnalysis<'a> {
             *node_id
         } else {
             let crate_name = self.interning_info.def_path_to_crate(def_path);
-            let relative_def_id = self.interning_info.relative_def_id_to_string(def_path);
+            let relative_def_id = self.interning_info.def_path_to_string(def_path);
             let package = self.interning_info.def_path_to_package(def_path);
             let num_lines = self.functions_info.functions_num_lines(def_path);
             callgraph.add_node(def_path, package, crate_name, relative_def_id, num_lines)
         }
     }
-    pub fn run(&'a mut self) -> CallGraph {
+    pub fn run(&'a self) -> CallGraph {
         let mut callgraph = CallGraph::new();
 
         for (call_id, caller, callee) in self.call_graph.iter() {

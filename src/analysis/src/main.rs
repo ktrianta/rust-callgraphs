@@ -22,7 +22,7 @@ fn main() {
     let args = CMDArgs::from_args();
     let database_root = Path::new(&args.database_root);
     let tables = Tables::load_multifile(database_root).unwrap();
-    let mut analysis = CallGraphAnalysis::new(&tables);
+    let analysis = CallGraphAnalysis::new(&tables);
     // println!("Loaded database");
 
     let callgraph = analysis.run();
