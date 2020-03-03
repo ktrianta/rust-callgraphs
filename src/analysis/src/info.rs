@@ -110,13 +110,15 @@ impl<'a> FunctionsInfo<'a> {
 
 pub struct TypeInfo {
     // Mapping from Adt to info.
-    adts: HashMap<Type, (DefPath, InternedString, Visibility)>,
+    adts: HashMap<DefPath, (InternedString, Visibility, Module)>,
+    // Mapping from Type to DefPath.
+    type_to_def_path: HashMap<Type, DefPath>,
     // Mapping from Item to DefPath.
     item_to_def_path: HashMap<Item, DefPath>,
     // Mapping from Trait DefPath to info.
     traits: HashMap<DefPath, (InternedString, Visibility, Module)>,
     // Mapping from Impl DefPath to Trait and Adt DefPaths.
-    impls: HashMap<DefPath, (Option<DefPath>, Type)>,
+    impls: HashMap<DefPath, (Option<DefPath>, DefPath)>,
     // Mapping from Trait DefPath to vector of its Impl DefPaths.
     pub trait_to_impls: HashMap<DefPath, Vec<DefPath>>,
     // Mapping from Trait Impl DefPath to mapping of Item Name to DefPath.
@@ -130,13 +132,22 @@ impl TypeInfo {
         let mut item_to_def_path = HashMap::new();
         let mut adts = HashMap::new();
         let mut impls = HashMap::new();
+        let mut type_to_def_path = HashMap::new();
         for (item, typ, def_path, module, name, visibility) in tables.relations.type_defs.iter() {
             item_to_def_path.insert(*item, *def_path);
-            adts.insert(*typ, (*def_path, *name, *visibility, *module));
+            type_to_def_path.insert(*typ, *def_path);
+            adts.insert(*def_path, (*name, *visibility, *module));
+        }
+        for (typ, def_path, _, _, _) in tables.relations.types_adt_def.iter() {
+            type_to_def_path.insert(*typ, *def_path);
         }
         for (def_path, item, _, _, _, _, _, _, typ) in tables.relations.impl_definitions.iter() {
             item_to_def_path.insert(*item, *def_path);
-            impls.insert(*def_path, (None, *typ));
+            if let Some(adt_def_path) = type_to_def_path.get(typ) {
+                impls.insert(*def_path, (None, *adt_def_path));
+            } else {
+                panic!("Impl definition: missing adt def path.");
+            }
         }
         let mut traits = HashMap::new();
         for (item, def_path, module, name, visibility, _, _, _) in tables.relations.traits.iter() {
@@ -151,7 +162,11 @@ impl TypeInfo {
             } else {
                 trait_to_impls.insert(*trait_def_path, vec![impl_def_path]);
             }
-            impls.insert(impl_def_path, (Some(*trait_def_path), *typ));
+            if let Some(adt_def_path) = type_to_def_path.get(typ) {
+                impls.insert(impl_def_path, (Some(*trait_def_path), *adt_def_path));
+            } else {
+                panic!("Trait impl definition: missing adt def path.");
+            }
         }
         let mut trait_impl_to_items: HashMap<_, HashMap<_, _>> = HashMap::new();
         for (impl_id, item_def_path, item_name) in tables.relations.trait_impl_items.iter() {
@@ -171,6 +186,7 @@ impl TypeInfo {
         }
         Self {
             adts,
+            type_to_def_path,
             item_to_def_path,
             traits,
             trait_to_impls,
