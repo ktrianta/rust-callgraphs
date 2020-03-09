@@ -331,7 +331,7 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
     fn visit_foreign_item(&mut self, item: &'tcx hir::ForeignItem) {
         let def_path = self.filler.resolve_hir_id(item.hir_id);
         let visibility = item.vis.convert_into();
-        match item.kind {
+        let opt_item = match item.kind {
             hir::ForeignItemKind::Fn(..) => {
                 let def_id = self.hir_map.local_def_id(item.hir_id);
                 let fn_sig = self.tcx.fn_sig(def_id);
@@ -353,20 +353,24 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
                         param_type,
                     );
                 }
+                Some(function)
             }
             hir::ForeignItemKind::Static(_, mutability) => {
                 let name: &str = &item.ident.name.as_str();
-                self.filler.tables.register_static_definitions(
+                let (item,) = self.filler.tables.register_static_definitions(
                     def_path,
                     self.current_module,
                     name.to_string(),
                     visibility,
                     mutability.convert_into(),
                 );
+                Some(item)
             }
-            hir::ForeignItemKind::Type => {}
-        }
+            hir::ForeignItemKind::Type => None
+        };
+        let old_item = mem::replace(&mut self.current_item, opt_item);
         intravisit::walk_foreign_item(self, item);
+        self.current_item = old_item;
     }
     fn visit_body(&mut self, body: &'tcx hir::Body) {
         intravisit::walk_body(self, body);
