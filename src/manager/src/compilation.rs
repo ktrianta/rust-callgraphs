@@ -184,8 +184,10 @@ impl<'a> CrateCompiler<'a> {
                     let success_marker = target_dir.join("success");
                     std::fs::write(success_marker, format!("{:?}", chrono::offset::Utc::now()))?;
                 }
+                // Extract log data.
                 let build_logs = target_dir.join("logs");
                 std::fs::write(build_logs, storage.to_string())?;
+                // Extract bincode files.
                 for entry in walkdir::WalkDir::new(target_dir) {
                     let entry = entry?;
                     let path = entry.path();
@@ -194,6 +196,9 @@ impl<'a> CrateCompiler<'a> {
                         std::fs::rename(path, crate_extracted_files.join(file_name))?;
                     }
                 }
+                // Extract lockfile.
+                let lockfile = build.host_source_dir().join("Cargo.lock");
+                std::fs::rename(lockfile, crate_extracted_files.join("Cargo.lock"))?;
                 result
             })?;
         Ok(())
