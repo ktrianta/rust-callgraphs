@@ -205,15 +205,14 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
                     body_id,
                 );
             }
-            hir::ItemKind::Impl(
+            hir::ItemKind::Impl {
                 unsafety,
                 polarity,
                 defaultness,
-                ref _generics,
-                ref trait_ref,
-                ref _typ,
-                impl_items,
-            ) => {
+                ref of_trait,
+                ref items,
+                ..
+            } => {
                 let interned_type = self.filler.register_type(self.tcx.type_of(def_id));
                 let (item_id,) = self.filler.tables.register_impl_definitions(
                     def_path,
@@ -225,13 +224,13 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
                     defaultness.convert_into(),
                     interned_type,
                 );
-                if let Some(trait_ref) = trait_ref {
+                if let Some(trait_ref) = of_trait {
                     let trait_def_path = self.filler.resolve_def_id(trait_ref.trait_def_id());
                     self.filler
                         .tables
                         .register_trait_impls(item_id, interned_type, trait_def_path);
 
-                    for impl_item in impl_items {
+                    for impl_item in items.iter() {
                         let impl_item_def_path = self.filler.resolve_hir_id(impl_item.id.hir_id);
                         self.filler.tables.register_trait_impl_items(
                             item_id,

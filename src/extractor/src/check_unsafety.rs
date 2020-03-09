@@ -1,5 +1,5 @@
 // This file was originally taken from
-// https://raw.githubusercontent.com/rust-lang/rust/ae1b871cca56613b1af1a5121dd24ac810ff4b89/src/librustc_mir/transform/check_unsafety.rs
+// https://raw.githubusercontent.com/rust-lang/rust/5f1caa4032e7bd31aab30a62d07e359a69c56517/src/librustc_mir/transform/check_unsafety.rs
 //
 // This source code is licensed under the MIT or Apache 2 license found in
 // https://raw.githubusercontent.com/rust-lang/rust/ae1b871cca56613b1af1a5121dd24ac810ff4b89/LICENSE-MIT and
@@ -27,8 +27,6 @@ use std::ops::Bound;
 
 use rustc_mir::const_eval::{is_const_fn, is_min_const_fn};
 use rustc_mir::util;
-
-use rustc_error_codes::*;
 
 pub struct UnsafetyChecker<'a, 'tcx> {
     body: &'a Body<'tcx>,
@@ -230,7 +228,7 @@ impl<'a, 'tcx> Visitor<'tcx> for UnsafetyChecker<'a, 'tcx> {
                 }
             }
             let is_borrow_of_interior_mut = context.is_borrow()
-                && !Place::ty_from(&place.local, proj_base, self.body, self.tcx).ty.is_freeze(
+                && !Place::ty_from(place.local, proj_base, self.body, self.tcx).ty.is_freeze(
                     self.tcx,
                     self.param_env,
                     self.source_info.span,
@@ -248,32 +246,34 @@ impl<'a, 'tcx> Visitor<'tcx> for UnsafetyChecker<'a, 'tcx> {
             if let (local, []) = (&place.local, proj_base) {
                 let decl = &self.body.local_decls[*local];
                 if decl.internal {
-                    // Internal locals are used in the `move_val_init` desugaring.
-                    // We want to check unsafety against the source info of the
-                    // desugaring, rather than the source info of the RHS.
-                    self.source_info = self.body.local_decls[*local].source_info;
-                } else if let LocalInfo::StaticRef { def_id, .. } = decl.local_info {
-                    if self.tcx.is_mutable_static(def_id) {
-                        self.require_unsafe(
-                            "use of mutable static",
-                            "mutable statics can be mutated by multiple threads: aliasing \
-                        violations or data races will cause undefined behavior",
-                            UnsafetyViolationKind::General,
-                        );
-                        return;
-                    } else if self.tcx.is_foreign_item(def_id) {
-                        self.require_unsafe(
-                            "use of extern static",
-                            "extern statics are not controlled by the Rust type system: \
-                        invalid data, aliasing violations or data races will cause \
-                        undefined behavior",
-                            UnsafetyViolationKind::General,
-                        );
-                        return;
+                    if let LocalInfo::StaticRef { def_id, .. } = decl.local_info {
+                        if self.tcx.is_mutable_static(def_id) {
+                            self.require_unsafe(
+                                "use of mutable static",
+                                "mutable statics can be mutated by multiple threads: aliasing \
+                            violations or data races will cause undefined behavior",
+                                UnsafetyViolationKind::General,
+                            );
+                            return;
+                        } else if self.tcx.is_foreign_item(def_id) {
+                            self.require_unsafe(
+                                "use of extern static",
+                                "extern statics are not controlled by the Rust type system: \
+                            invalid data, aliasing violations or data races will cause \
+                            undefined behavior",
+                                UnsafetyViolationKind::General,
+                            );
+                            return;
+                        }
+                    } else {
+                        // Internal locals are used in the `move_val_init` desugaring.
+                        // We want to check unsafety against the source info of the
+                        // desugaring, rather than the source info of the RHS.
+                        self.source_info = self.body.local_decls[*local].source_info;
                     }
                 }
             }
-            let base_ty = Place::ty_from(&place.local, proj_base, self.body, self.tcx).ty;
+            let base_ty = Place::ty_from(place.local, proj_base, self.body, self.tcx).ty;
             match base_ty.kind {
                 ty::RawPtr(..) => self.require_unsafe(
                     "dereference of raw pointer",
@@ -361,7 +361,7 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
             // `unsafe` blocks are required in safe code
             Safety::Safe => {
                 for violation in violations {
-                    let mut violation = violation.clone();
+                    let mut violation = *violation;
                     match violation.kind {
                         UnsafetyViolationKind::GeneralAndConstFn
                         | UnsafetyViolationKind::General => {}
@@ -399,7 +399,7 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
                             // these things are forbidden in const fns
                             UnsafetyViolationKind::General
                             | UnsafetyViolationKind::BorrowPacked(_) => {
-                                let mut violation = violation.clone();
+                                let mut violation = *violation;
                                 // const fns don't need to be backwards compatible and can
                                 // emit these violations as a hard error instead of a backwards
                                 // compat lint
@@ -430,8 +430,7 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
             match elem {
                 ProjectionElem::Field(..) => {
                     let ty =
-                        Place::ty_from(&place.local, proj_base, &self.body.local_decls, self.tcx)
-                            .ty;
+                        Place::ty_from(place.local, proj_base, &self.body.local_decls, self.tcx).ty;
                     match ty.kind {
                         ty::Adt(def, _) => match self.tcx.layout_scalar_valid_range(def.did) {
                             (Bound::Unbounded, Bound::Unbounded) => {}
