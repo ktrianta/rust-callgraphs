@@ -1,13 +1,15 @@
 use crate::info::{InterningInfo, TypeInfo};
+use corpus_database::types::Type as CorpusType;
 use corpus_database::types::*;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::File;
 
 #[derive(Serialize)]
-pub struct Adt {
+pub struct Type {
     id: usize,
-    relative_def_id: String,
+    string_id: String,
+    relative_def_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -19,70 +21,89 @@ pub struct Trait {
 #[derive(Serialize)]
 pub struct Impl {
     id: usize,
-    adt_id: usize,
+    type_id: usize,
     trait_id: Option<usize>,
     relative_def_id: String,
 }
 
 #[derive(Default, Serialize)]
 pub struct TypeHierarchy {
-    adts: Vec<Adt>,
+    adts: Vec<Type>,
     traits: Vec<Trait>,
     impls: Vec<Impl>,
     #[serde(skip)]
-    type_registry: HashMap<DefPath, usize>,
+    type_registry: HashMap<CorpusType, usize>,
+    #[serde(skip)]
+    def_path_registry: HashMap<DefPath, usize>,
 }
 
 impl TypeHierarchy {
     pub(crate) fn new(types: &TypeInfo, interning: &InterningInfo) -> Self {
         let mut type_hierarchy = TypeHierarchy::default();
-        for def_path in types.iter_adt_def_paths() {
-            type_hierarchy.add_adt(&interning, *def_path);
+        for typ in types.iter_adt_types() {
+            type_hierarchy.register_type(*typ, types, &interning);
         }
         for def_path in types.iter_trait_def_paths() {
-            type_hierarchy.add_trait(&interning, *def_path);
+            type_hierarchy.register_trait(*def_path, interning);
         }
         for def_path in types.iter_impl_def_paths() {
-            type_hierarchy.add_impl(&types, &interning, *def_path);
+            type_hierarchy.register_impl(*def_path, types, &interning);
         }
         type_hierarchy
     }
-    fn register_type(&mut self, def_path: DefPath) -> usize {
-        let id = self.type_registry.len();
-        self.type_registry.insert(def_path, id);
-        id
+    fn register_type(&mut self, typ: CorpusType, types: &TypeInfo, interning: &InterningInfo) -> usize {
+        if let Some(id) = self.type_registry.get(&typ) {
+            *id
+        } else {
+            let id = self.type_registry.len();
+            self.type_registry.insert(typ, id);
+            let (string_id, opt_def_path) = types.resolve_type(&typ, interning);
+            self.adts.push(Type {
+                id,
+                string_id,
+                relative_def_id: match opt_def_path {
+                    Some(def_path) => Some(interning.def_path_to_string(&def_path)),
+                    None => None,
+                }
+            });
+            id
+        }
     }
-    fn add_adt(&mut self, interning: &InterningInfo, def_path: DefPath) {
-        let id = self.register_type(def_path);
-        let relative_def_id = interning.def_path_to_string(&def_path);
-        self.adts.push(Adt {
-            id,
-            relative_def_id,
-        });
+    fn register_trait(&mut self, def_path: DefPath, interning: &InterningInfo) -> usize {
+        if let Some(id) = self.def_path_registry.get(&def_path) {
+            *id
+        } else {
+            let id = self.def_path_registry.len();
+            self.def_path_registry.insert(def_path, id);
+            let relative_def_id = interning.def_path_to_string(&def_path);
+            self.traits.push(Trait {
+                id,
+                relative_def_id,
+            });
+            id
+        }
     }
-    fn add_trait(&mut self, interning: &InterningInfo, def_path: DefPath) {
-        let id = self.register_type(def_path);
-        let relative_def_id = interning.def_path_to_string(&def_path);
-        self.traits.push(Trait {
-            id,
-            relative_def_id,
-        })
-    }
-    fn add_impl(&mut self, types: &TypeInfo, interning: &InterningInfo, def_path: DefPath) {
-        let id = self.register_type(def_path);
-        let (trait_def_path, adt_def_path) = types.get_impl_related_def_paths(&def_path);
-        let adt_id = self.type_registry[&adt_def_path];
-        let trait_id = match trait_def_path {
-            Some(def_path) => Some(self.type_registry[&def_path]),
-            None => None,
-        };
-        let relative_def_id = interning.def_path_to_string(&def_path);
-        self.impls.push(Impl {
-            id,
-            adt_id,
-            trait_id,
-            relative_def_id,
-        });
+    fn register_impl(&mut self, def_path: DefPath, types: &TypeInfo, interning: &InterningInfo) -> usize {
+        if let Some(id) = self.def_path_registry.get(&def_path) {
+            *id
+        } else {
+            let id = self.def_path_registry.len();
+            self.def_path_registry.insert(def_path, id);
+            let (opt_trait_def_path, typ) = types.get_impl_types(&def_path);
+            let type_id = self.register_type(typ, types, interning);
+            let trait_id = match opt_trait_def_path {
+                Some(trait_def_path) => Some(self.register_trait(trait_def_path, interning)),
+                None => None,
+            };
+            let relative_def_id = interning.def_path_to_string(&def_path);
+            self.impls.push(Impl {
+                id,
+                type_id,
+                trait_id,
+                relative_def_id,
+            });
+            id
+        }
     }
     pub fn save(&self, path: &std::path::Path) {
         let mut file =
