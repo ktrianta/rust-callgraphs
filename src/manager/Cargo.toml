@@ -35,5 +35,5 @@ tokio = "0.2"
 nix = "0.14.1"
 failure = "0.1.5"
 walkdir = "2"
-rustwide = { version = "0.5.1" }
+rustwide = { version = "0.5.1", features = ["unstable"] }
 crates-index = "0.13"

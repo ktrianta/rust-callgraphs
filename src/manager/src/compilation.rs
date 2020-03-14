@@ -60,6 +60,7 @@ impl CompileManager {
     #[logfn(Trace)]
     pub fn compile_all(&self) -> Result<(), Box<dyn std::error::Error>> {
         let workspace_builder = WorkspaceBuilder::new(&self.workspace, "rust-corpus")
+            .fetch_registry_index_during_builds(false)
             .running_inside_docker(std::env::var("RUNNING_INSIDE_DOCKER").is_ok());
         let workspace = workspace_builder.init()?;
         let toolchain = Toolchain::dist(&self.toolchain);
