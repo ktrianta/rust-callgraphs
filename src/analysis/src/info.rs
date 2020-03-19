@@ -56,6 +56,8 @@ impl<'a> InterningInfo<'a> {
 
 pub(crate) struct FunctionsInfo<'a> {
     functions: HashMap<DefPath, (Module, Visibility, Option<SpanLocation>)>,
+    function_to_impl_item: HashMap<DefPath, Item>,
+    function_to_trait_item: HashMap<DefPath, Item>,
     // Interning tables.
     interning: InterningInfo<'a>,
 }
@@ -86,8 +88,18 @@ impl<'a> FunctionsInfo<'a> {
                 functions.insert(*def_path, (*module, *visibility, None));
             }
         }
+        let mut function_to_impl_item = HashMap::new();
+        for (impl_id, function_def_path, _) in tables.relations.trait_impl_items.iter() {
+            function_to_impl_item.insert(*function_def_path, *impl_id);
+        }
+        let mut function_to_trait_item = HashMap::new();
+        for (trait_id, function_def_path, _, _) in tables.relations.trait_items.iter() {
+            function_to_trait_item.insert(*function_def_path, *trait_id);
+        }
         Self {
             functions,
+            function_to_impl_item,
+            function_to_trait_item,
             interning: InterningInfo::new(&tables.interning_tables),
         }
     }
@@ -106,9 +118,164 @@ impl<'a> FunctionsInfo<'a> {
             0
         }
     }
+    pub fn is_function_externally_visible(
+        &self,
+        def_path: &DefPath,
+        modules: &ModulesInfo,
+        types: &TypeInfo,
+    ) -> bool {
+        if let Some((module, visibility, _)) = self.functions.get(def_path) {
+            if let Some(trait_item) = self.function_to_trait_item.get(def_path) {
+                types.is_trait_item_externally_visible(trait_item, modules)
+            } else if let Some(impl_item) = self.function_to_impl_item.get(def_path) {
+                if types.is_trait_impl(impl_item) {
+                    types.is_impl_item_externally_visible(impl_item, modules)
+                } else {
+                    match visibility {
+                        Visibility::Public => {
+                            types.is_impl_item_externally_visible(impl_item, modules)
+                        }
+                        _ => false,
+                    }
+                }
+            } else {
+                match visibility {
+                    Visibility::Public => modules.is_module_externally_visible(module),
+                    _ => false,
+                }
+            }
+        } else {
+            // If function definition is missing it is because it is defined in another package,
+            // thus it is externally visible.
+            true
+        }
+    }
 }
 
-pub struct TypeInfo {
+pub(crate) struct ModulesInfo {
+    modules: HashMap<Module, (DefPath, Visibility, Module)>,
+    module_is_externally_visible: HashMap<Module, bool>,
+}
+
+impl ModulesInfo {
+    pub fn new(tables: &Tables) -> Self {
+        let mut crate_types = HashMap::new();
+        for (build, crate_type) in tables.relations.build_crate_types.iter() {
+            crate_types.insert(*build, tables.interning_tables.strings[*crate_type].clone());
+        }
+        // Mapping from root module to module's crate type, e.g., bin, lib, etc.
+        let mut root_modules_to_crate_type = HashMap::new();
+        for (build, root_module) in tables.relations.root_modules.iter() {
+            if let Some(crate_type) = crate_types.get(build) {
+                root_modules_to_crate_type.insert(*root_module, crate_type.clone());
+            } else {
+                // TODO: further investigate why rarely it happends that a build has no crate type.
+                // The root modules (associated to these builds) that we have examined include only
+                // private items and thus we treat these modules as binary ones.
+                root_modules_to_crate_type.insert(*root_module, "bin".to_string());
+            }
+        }
+        let mut modules = HashMap::new();
+        for (def_path, parent_module, module, _, visibility, _) in
+            tables.relations.submodules.iter()
+        {
+            modules.insert(*module, (*def_path, *visibility, *parent_module));
+        }
+        let module_is_externally_visible =
+            Self::compute_modules_external_visibility(&root_modules_to_crate_type, &modules);
+        Self {
+            modules,
+            module_is_externally_visible,
+        }
+    }
+    // Returns a mapping that specifies if the module is externally visible or not.
+    fn compute_modules_external_visibility(
+        root_modules_to_crate_type: &HashMap<Module, String>,
+        modules: &HashMap<Module, (DefPath, Visibility, Module)>,
+    ) -> HashMap<Module, bool> {
+        let mut module_is_externally_visible = HashMap::new();
+        // Root modules' visibility depends on the type of the crate, i.e., bin or lib.
+        // Binary crates are invisible, while library ones are visible.
+        let is_crate_type_externally_visible = |crate_type: &str| match crate_type {
+            // Below we list all available crate types.
+            "bin" => false,
+            "rlib" => true,
+            "dylib" => true,
+            "staticlib" => true,
+            "cdylib" => true,
+            "proc-macro" => true,
+            // "lib" should not occur as it appears as "rlib".
+            "lib" => true,
+            // There are no other crate type options (at least currently).
+            _ => unreachable!(),
+        };
+        // Compute root modules external visibility.
+        for (module, crate_type) in root_modules_to_crate_type {
+            let is_externally_visible = is_crate_type_externally_visible(crate_type);
+            module_is_externally_visible.insert(*module, is_externally_visible);
+        }
+        // Compute submodules external visibility by looping over them.
+        for (module, (_, visibility, parent)) in modules {
+            if module_is_externally_visible.get(module).is_none() {
+                let is_public = Self::compute_submodule_external_visibility(
+                    *visibility,
+                    *parent,
+                    modules,
+                    &mut module_is_externally_visible,
+                );
+                module_is_externally_visible.insert(*module, is_public);
+            }
+        }
+        module_is_externally_visible
+    }
+    // Returns the external visibility of a module when provided by its visibility and its parent.
+    // While computing the module's external visibility, it also does so for all parent modules.
+    // External visibility for all modules is cached in module_is_externally_visible mapping.
+    fn compute_submodule_external_visibility(
+        visibility: Visibility,
+        parent: Module,
+        modules: &HashMap<Module, (DefPath, Visibility, Module)>,
+        module_is_externally_visible: &mut HashMap<Module, bool>,
+    ) -> bool {
+        let is_externally_visible = |visibility| match visibility {
+            Visibility::Public => true,
+            _ => false,
+        };
+        if let Some(is_parent_externally_visible) = module_is_externally_visible.get(&parent) {
+            // Externally visibility has already been computed in the past for this parent module.
+            // NOTE: The visibility of all parent modules that are root modules should have been
+            //       computed prior to calling the compute_submodule_external_visibility function.
+            *is_parent_externally_visible && is_externally_visible(visibility)
+        } else {
+            if let Some((_, parents_visibility, parents_parent)) = modules.get(&parent) {
+                let is_parent_externally_visible = Self::compute_submodule_external_visibility(
+                    *parents_visibility,
+                    *parents_parent,
+                    modules,
+                    module_is_externally_visible,
+                );
+                module_is_externally_visible.insert(parent, is_parent_externally_visible);
+                is_parent_externally_visible && is_externally_visible(visibility)
+            } else {
+                // If the parent module does not have a parent, it is a root module. Root modules
+                // external visibility should have been computed prior to calling this function and
+                // should be cached in module_is_externally_visible mapping.
+                panic!()
+            }
+        }
+    }
+    pub fn is_module_externally_visible(&self, module: &Module) -> bool {
+        if let Some(is_externally_visible) = self.module_is_externally_visible.get(module) {
+            *is_externally_visible
+        } else {
+            // If module definition is missing it is because it is defined in another package, thus
+            // it is externally visible.
+            true
+        }
+    }
+}
+
+pub(crate) struct TypeInfo {
     // Mapping from Adt to info.
     adts: HashMap<DefPath, (InternedString, Visibility, Module)>,
     // Mapping from Type to DefPath.
@@ -254,7 +421,95 @@ impl TypeInfo {
             types_tuple,
             types_tuple_elements,
             types_param,
-            types_projection
+            types_projection,
+        }
+    }
+    fn is_trait_impl(&self, impl_item: &Item) -> bool {
+        let impl_def_path = self.item_to_def_path[impl_item];
+        match self.impls.get(&impl_def_path) {
+            Some((Some(_), _)) => true,
+            _ => false,
+        }
+    }
+    pub(crate) fn is_type_externally_visible(&self, typ: &Type, modules: &ModulesInfo) -> bool {
+        if let Some(def_path) = self.type_to_adt_def_path.get(typ) {
+            self.is_adt_externally_visible(def_path, modules)
+        } else if let Some(_) = self.types_primitive.get(typ) {
+            true
+        } else if let Some(element_type) = self.types_slice.get(typ) {
+            self.is_type_externally_visible(element_type, modules)
+        } else if let Some(element_type) = self.types_array.get(typ) {
+            self.is_type_externally_visible(element_type, modules)
+        } else if let Some((typ, _)) = self.types_raw_ptr.get(typ) {
+            self.is_type_externally_visible(typ, modules)
+        } else if let Some((typ, _)) = self.types_ref.get(typ) {
+            self.is_type_externally_visible(typ, modules)
+        } else if let Some(def_path) = self.types_dynamic_trait.get(typ) {
+            self.is_trait_externally_visible(def_path, modules)
+        } else if let Some(typ) = self.types_tuple.get(typ) {
+            if let Some(elements) = self.types_tuple_elements.get(typ) {
+                let mut is_visible = true;
+                for (_, typ) in elements {
+                    is_visible &= self.is_type_externally_visible(typ, modules);
+                }
+                is_visible
+            } else {
+                true
+            }
+        } else if let Some(_) = self.types_param.get(typ) {
+            // TODO: Investigate further. Conservatively consider these externally visible for now.
+            true
+        } else if let Some((trait_def_path, _)) = self.types_projection.get(typ) {
+            // Associated type is externally visible if trait is.
+            self.is_trait_externally_visible(trait_def_path, modules)
+        } else {
+            true
+        }
+    }
+    fn is_trait_item_externally_visible(&self, trait_item: &Item, modules: &ModulesInfo) -> bool {
+        if let Some(trait_def_path) = self.item_to_def_path.get(trait_item) {
+            self.is_trait_externally_visible(&trait_def_path, modules)
+        } else {
+            // If trait definition is missing it is because it is defined in another package, thus
+            // it is externally visible.
+            true
+        }
+    }
+    fn is_impl_item_externally_visible(&self, impl_item: &Item, modules: &ModulesInfo) -> bool {
+        let impl_def_path = self.item_to_def_path[impl_item];
+        if let Some((opt_trait_def_path, typ)) = self.impls.get(&impl_def_path) {
+            if let Some(trait_def_path) = opt_trait_def_path {
+                self.is_trait_externally_visible(&trait_def_path, modules)
+                    && self.is_type_externally_visible(typ, modules)
+            } else {
+                self.is_type_externally_visible(typ, modules)
+            }
+        } else {
+            panic!("Implementation visibility: missing implementation definition.");
+        }
+    }
+    fn is_trait_externally_visible(&self, def_path: &DefPath, modules: &ModulesInfo) -> bool {
+        if let Some((_, visibility, module)) = self.traits.get(def_path) {
+            match visibility {
+                Visibility::Public => modules.is_module_externally_visible(module),
+                _ => false,
+            }
+        } else {
+            // If trait definition is missing it is because it is defined in another package, thus
+            // it is externally visible.
+            true
+        }
+    }
+    fn is_adt_externally_visible(&self, def_path: &DefPath, modules: &ModulesInfo) -> bool {
+        if let Some((_, visibility, module)) = self.adts.get(def_path) {
+            match visibility {
+                Visibility::Public => modules.is_module_externally_visible(module),
+                _ => false,
+            }
+        } else {
+            // If adt definition is missing it is because it is defined in another package, thus
+            // it is externally visible.
+            true
         }
     }
     pub fn iter_adt_types(&self) -> impl Iterator<Item = &Type> {

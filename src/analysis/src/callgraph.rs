@@ -10,6 +10,7 @@ pub struct Node {
     pub package: String,
     pub crate_name: String,
     pub relative_def_id: String,
+    pub is_externally_visible: bool,
     pub num_lines: i32,
 }
 
@@ -38,6 +39,7 @@ impl CallGraph {
         package: String,
         crate_name: String,
         relative_def_id: String,
+        is_externally_visible: bool,
         num_lines: i32,
     ) -> NodeId {
         let id = self.node_registry.len();
@@ -47,6 +49,7 @@ impl CallGraph {
             package,
             crate_name,
             relative_def_id,
+            is_externally_visible,
             num_lines,
         });
         id

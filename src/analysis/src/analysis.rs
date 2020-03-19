@@ -1,5 +1,5 @@
 use crate::callgraph::{CallGraph, NodeId};
-use crate::info::{FunctionsInfo, InterningInfo, TypeInfo};
+use crate::info::{FunctionsInfo, InterningInfo, ModulesInfo, TypeInfo};
 use crate::types::TypeHierarchy;
 use corpus_database::tables::Tables;
 use corpus_database::types::*;
@@ -17,6 +17,7 @@ pub struct CallGraphAnalysis<'a> {
     type_info: TypeInfo,
     functions_info: FunctionsInfo<'a>,
     interning_info: InterningInfo<'a>,
+    modules_info: ModulesInfo,
 }
 
 impl<'a> CallGraphAnalysis<'a> {
@@ -49,6 +50,7 @@ impl<'a> CallGraphAnalysis<'a> {
             type_info: TypeInfo::new(tables),
             functions_info: FunctionsInfo::new(tables),
             interning_info: InterningInfo::new(&tables.interning_tables),
+            modules_info: ModulesInfo::new(tables),
         }
     }
     fn add_node_to_callgraph(&self, callgraph: &mut CallGraph, def_path: &DefPath) -> NodeId {
@@ -59,7 +61,21 @@ impl<'a> CallGraphAnalysis<'a> {
             let relative_def_id = self.interning_info.def_path_to_string(def_path);
             let package = self.interning_info.def_path_to_package(def_path);
             let num_lines = self.functions_info.functions_num_lines(def_path);
-            callgraph.add_node(def_path, package, crate_name, relative_def_id, num_lines)
+            let is_externally_visible = self.functions_info.is_function_externally_visible(
+                def_path,
+                &self.modules_info,
+                &self.type_info,
+            );
+            callgraph.add_node(
+                def_path,
+                package,
+                crate_name,
+                relative_def_id,
+                is_externally_visible,
+                num_lines,
+            )
+        }
+    }
         }
     }
     pub fn run(&'a self) -> CallGraph {

@@ -28,11 +28,11 @@ pub struct Impl {
 
 #[derive(Default, Serialize)]
 pub struct TypeHierarchy {
-    adts: Vec<Type>,
+    types: Vec<Type>,
     traits: Vec<Trait>,
     impls: Vec<Impl>,
     #[serde(skip)]
-    type_registry: HashMap<CorpusType, usize>,
+    type_registry: HashMap<String, usize>,
     #[serde(skip)]
     def_path_registry: HashMap<DefPath, usize>,
 }
@@ -51,20 +51,25 @@ impl TypeHierarchy {
         }
         type_hierarchy
     }
-    fn register_type(&mut self, typ: CorpusType, types: &TypeInfo, interning: &InterningInfo) -> usize {
-        if let Some(id) = self.type_registry.get(&typ) {
+    fn register_type(
+        &mut self,
+        typ: CorpusType,
+        types: &TypeInfo,
+        interning: &InterningInfo,
+    ) -> usize {
+        let (string_id, opt_def_path) = types.resolve_type(&typ, interning);
+        if let Some(id) = self.type_registry.get(&string_id) {
             *id
         } else {
-            let id = self.type_registry.len();
-            self.type_registry.insert(typ, id);
-            let (string_id, opt_def_path) = types.resolve_type(&typ, interning);
-            self.adts.push(Type {
+            let id = self.type_registry.len() + self.def_path_registry.len();
+            self.type_registry.insert(string_id.clone(), id);
+            self.types.push(Type {
                 id,
                 string_id,
                 relative_def_id: match opt_def_path {
                     Some(def_path) => Some(interning.def_path_to_string(&def_path)),
                     None => None,
-                }
+                },
             });
             id
         }
@@ -73,7 +78,7 @@ impl TypeHierarchy {
         if let Some(id) = self.def_path_registry.get(&def_path) {
             *id
         } else {
-            let id = self.def_path_registry.len();
+            let id = self.type_registry.len() + self.def_path_registry.len();
             self.def_path_registry.insert(def_path, id);
             let relative_def_id = interning.def_path_to_string(&def_path);
             self.traits.push(Trait {
@@ -83,11 +88,16 @@ impl TypeHierarchy {
             id
         }
     }
-    fn register_impl(&mut self, def_path: DefPath, types: &TypeInfo, interning: &InterningInfo) -> usize {
+    fn register_impl(
+        &mut self,
+        def_path: DefPath,
+        types: &TypeInfo,
+        interning: &InterningInfo,
+    ) -> usize {
         if let Some(id) = self.def_path_registry.get(&def_path) {
             *id
         } else {
-            let id = self.def_path_registry.len();
+            let id = self.type_registry.len() + self.def_path_registry.len();
             self.def_path_registry.insert(def_path, id);
             let (opt_trait_def_path, typ) = types.get_impl_types(&def_path);
             let type_id = self.register_type(typ, types, interning);
