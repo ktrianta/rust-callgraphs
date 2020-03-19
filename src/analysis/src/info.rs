@@ -18,10 +18,7 @@ impl<'a> InterningInfo<'a> {
             if package_info_registry.get(crate_hash).is_none() {
                 let id = package_info.len();
                 package_info_registry.insert(*crate_hash, id);
-                package_info.push((
-                    pkg_name_interned_string,
-                    pkg_version_interned_string,
-                ));
+                package_info.push((pkg_name_interned_string, pkg_version_interned_string));
             }
         }
         Self {
@@ -533,10 +530,8 @@ impl TypeInfo {
         interning: &InterningInfo,
     ) -> (String, Option<DefPath>) {
         if let Some(def_path) = self.type_to_adt_def_path.get(typ) {
-            (
-                Self::def_path_to_type_name(def_path, interning),
-                Some(*def_path),
-            )
+            let type_name = Self::def_path_to_type_name(def_path, interning);
+            (type_name, Some(*def_path))
         } else if let Some(primitive) = self.types_primitive.get(typ) {
             (Self::primitive_to_string(primitive), None)
         } else if let Some(element_type) = self.types_slice.get(typ) {
@@ -562,10 +557,8 @@ impl TypeInfo {
                 opt_def_path,
             )
         } else if let Some(def_path) = self.types_dynamic_trait.get(typ) {
-            (
-                format!("dyn {}", Self::def_path_to_type_name(def_path, interning)),
-                Some(*def_path),
-            )
+            let type_name = Self::def_path_to_type_name(def_path, interning);
+            (format!("dyn {}", type_name), Some(*def_path))
         } else if let Some(typ) = self.types_tuple.get(typ) {
             if let Some(elements) = self.types_tuple_elements.get(typ) {
                 let mut tuple_string = String::from("(");
@@ -587,20 +580,18 @@ impl TypeInfo {
                 Some(*trait_def_path),
             )
         } else {
-            ("Unknown".to_string(), None)
+            // Unknown type representing all the failed resolved types.
+            ("unknown".to_string(), None)
         }
     }
     fn def_path_to_type_name(def_path: &DefPath, interning: &InterningInfo) -> String {
         let def_path_string = interning.def_path_to_string(&def_path);
         let mut tokens: Vec<&str> = def_path_string.split("::").collect();
-        if let Some(string_id) = tokens.pop() {
-            let len = string_id.len();
-            let mut string_id = string_id.to_string();
-            string_id.truncate(len - 3);
-            string_id
-        } else {
-            "null".to_string()
-        }
+        let string_id = tokens.pop().unwrap();
+        let len = string_id.len();
+        let mut string_id = string_id.to_string();
+        string_id.truncate(len - 3);
+        string_id
     }
     fn mutability_modifier_to_string(mutability: &Mutability) -> String {
         match mutability.to_string().as_ref() {
