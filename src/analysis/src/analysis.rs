@@ -76,10 +76,14 @@ impl<'a> CallGraphAnalysis<'a> {
             )
         }
     }
+    fn add_all_function_to_callgraph(&self, callgraph: &mut CallGraph) {
+        for def_path in self.functions_info.iter_def_paths() {
+            self.add_node_to_callgraph(callgraph, &def_path);
         }
     }
     pub fn run(&'a self) -> CallGraph {
         let mut callgraph = CallGraph::new();
+        self.add_all_function_to_callgraph(&mut callgraph);
 
         for (call_id, caller, callee) in self.call_graph.iter() {
             let caller_id = self.add_node_to_callgraph(&mut callgraph, &caller);
