@@ -133,7 +133,7 @@ impl<'a> CallGraphAnalysis<'a> {
         &'a self,
         function_def_path: &DefPath,
     ) -> Result<Vec<DefPath>, Box<dyn std::error::Error>> {
-        let (function_name, defaultness, trait_def_path) = self
+        let (function_name, _, trait_def_path) = self
             .type_info
             .trait_items
             .get(function_def_path)
@@ -155,7 +155,12 @@ impl<'a> CallGraphAnalysis<'a> {
             is_implemented_by_all = false;
         }
         if !is_implemented_by_all {
-            assert!(*defaultness == Defaultness::DefaultWithValue);
+            // TODO: Handle impl specialization implemented in the following pull request
+            // https://github.com/rust-lang/rfcs/pull/1210
+            // Specialization is available only in the nightly rustc.
+            // Package im-rc 13.0.0, the specialization feature in files
+            //   * https://docs.rs/crate/im-rc/13.0.0/source/src/ord/map.rs
+            //   * https://docs.rs/crate/im-rc/13.0.0/source/src/ord/set.rs
             resolved_functions.push(*function_def_path);
         }
         Ok(resolved_functions)
