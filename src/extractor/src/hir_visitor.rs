@@ -6,10 +6,10 @@ use crate::converters::ConvertInto;
 use crate::mir_visitor::MirVisitor;
 use crate::rustc::mir::HasLocalDecls;
 use crate::table_filler::TableFiller;
+use crate::SubstsMap;
 use corpus_database::{tables::Tables, types};
 use rustc::hir::{
     self,
-    def_id::DefId,
     intravisit::{self, Visitor},
     map::Map as HirMap,
     HirId,
@@ -17,14 +17,13 @@ use rustc::hir::{
 use rustc::mir;
 use rustc::session::Session;
 use rustc::ty::TyCtxt;
-use rustc_data_structures::fx::FxHashSet;
-use std::collections::HashMap;
 use std::mem;
 use syntax::source_map::Span;
 
 pub(crate) struct HirVisitor<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     hir_map: &'a HirMap<'tcx>,
+    substs_map: SubstsMap<'tcx>,
     filler: TableFiller<'a, 'tcx>,
     current_module: types::Module,
     current_item: Option<types::Item>,
@@ -33,17 +32,18 @@ pub(crate) struct HirVisitor<'a, 'tcx> {
 impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
     pub fn new(
         mut tables: Tables,
-        substs: HashMap<DefId, FxHashSet<rustc::ty::subst::SubstsRef<'tcx>>>,
+        substs_map: SubstsMap<'tcx>,
         build: types::Build,
         session: &'a Session,
         hir_map: &'a HirMap<'tcx>,
         tcx: TyCtxt<'tcx>,
     ) -> Self {
         let (root_module,) = tables.register_root_modules(build);
-        let filler = TableFiller::new(tcx, hir_map, session, tables, substs);
+        let filler = TableFiller::new(tcx, hir_map, session, tables);
         Self {
             tcx,
             hir_map,
+            substs_map,
             filler,
             current_module: root_module,
             current_item: None,
@@ -120,7 +120,14 @@ impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
     fn visit_mir(&mut self, body_id: hir::def_id::DefId, body: &mir::BodyAndCache<'tcx>) {
         let error = format!("Mir outside of an item: {:?}", body.span);
         let item = self.current_item.expect(&error);
-        let mut mir_visitor = MirVisitor::new(self.tcx, item, body_id, body, &mut self.filler);
+        let mut mir_visitor = MirVisitor::new(
+            self.tcx,
+            item,
+            body_id,
+            body,
+            &mut self.filler,
+            &mut self.substs_map,
+        );
         mir_visitor.visit();
     }
     fn visit_type(

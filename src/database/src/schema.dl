@@ -388,5 +388,5 @@ relation terminators_false_unwind(block: BasicBlock, real_target: BasicBlock, un
 
 relation call_graph(call: FunctionCall, caller_def_path: DefPath, callee_def_path: DefPath);
 relation instantiations(call: FunctionCall, instance_def_path: DefPath);
-relation virtual_calls(def_path: DefPath);
-relation generic_calls(def_path: DefPath);
+relation virtual_calls(def_path: FunctionCall);
+relation generic_calls(def_path: FunctionCall);

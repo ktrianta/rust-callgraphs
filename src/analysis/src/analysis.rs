@@ -7,9 +7,9 @@ use std::collections::{HashMap, HashSet};
 
 pub struct CallGraphAnalysis<'a> {
     // Generic calls.
-    generic_calls: HashSet<DefPath>,
+    generic_calls: HashSet<FunctionCall>,
     // Dynamic dispatch calls.
-    virtual_calls: HashSet<DefPath>,
+    virtual_calls: HashSet<FunctionCall>,
     // Call-graph.
     call_graph: Vec<(FunctionCall, DefPath, DefPath)>,
     // Mapping from generic function to its instantiations.
@@ -67,8 +67,7 @@ impl<'a> CallGraphAnalysis<'a> {
 
         for (call_id, caller, callee) in self.call_graph.iter() {
             let caller_id = self.add_node_to_callgraph(&mut callgraph, &caller);
-
-            if self.virtual_calls.contains(&callee) {
+            if self.virtual_calls.contains(&call_id) {
                 match self.resolve_virtual_call(&callee) {
                     Ok(resolved_callees) => {
                         for callee in resolved_callees {
@@ -79,7 +78,7 @@ impl<'a> CallGraphAnalysis<'a> {
                     Err(_) => {}
                     // Err(error) => println!("Resoltion failed: {}", error),
                 }
-            } else if self.generic_calls.contains(&callee) {
+            } else if self.generic_calls.contains(&call_id) {
                 // Add concrete (static dispatch) calls.
                 let mut instantiations_set = HashSet::new();
                 if let Some(instantiations) = self.generic_calls_instantiations.get(&call_id) {
