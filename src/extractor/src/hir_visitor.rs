@@ -373,7 +373,7 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
                 );
                 Some(item)
             }
-            hir::ForeignItemKind::Type => None
+            hir::ForeignItemKind::Type => None,
         };
         let old_item = mem::replace(&mut self.current_item, opt_item);
         intravisit::walk_foreign_item(self, item);

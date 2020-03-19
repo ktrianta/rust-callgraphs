@@ -524,9 +524,16 @@ impl TypeInfo {
     pub fn get_impl_types(&self, def_path: &DefPath) -> (Option<DefPath>, Type) {
         self.impls[def_path]
     }
-    pub(crate) fn resolve_type(&self, typ: &Type, interning: &InterningInfo) -> (String, Option<DefPath>) {
+    pub(crate) fn resolve_type(
+        &self,
+        typ: &Type,
+        interning: &InterningInfo,
+    ) -> (String, Option<DefPath>) {
         if let Some(def_path) = self.type_to_adt_def_path.get(typ) {
-            (Self::def_path_to_type_name(def_path, interning), Some(*def_path))
+            (
+                Self::def_path_to_type_name(def_path, interning),
+                Some(*def_path),
+            )
         } else if let Some(primitive) = self.types_primitive.get(typ) {
             (Self::primitive_to_string(primitive), None)
         } else if let Some(element_type) = self.types_slice.get(typ) {
@@ -543,9 +550,19 @@ impl TypeInfo {
             }
         } else if let Some((typ, mutability)) = self.types_ref.get(typ) {
             let (string_id, opt_def_path) = self.resolve_type(typ, interning);
-            (format!("&{} {}", Self::mutability_modifier_to_string(mutability), string_id), opt_def_path)
+            (
+                format!(
+                    "&{} {}",
+                    Self::mutability_modifier_to_string(mutability),
+                    string_id
+                ),
+                opt_def_path,
+            )
         } else if let Some(def_path) = self.types_dynamic_trait.get(typ) {
-            (format!("dyn {}", Self::def_path_to_type_name(def_path, interning)), Some(*def_path))
+            (
+                format!("dyn {}", Self::def_path_to_type_name(def_path, interning)),
+                Some(*def_path),
+            )
         } else if let Some(typ) = self.types_tuple.get(typ) {
             if let Some(elements) = self.types_tuple_elements.get(typ) {
                 let mut tuple_string = String::from("(");
@@ -561,8 +578,11 @@ impl TypeInfo {
             }
         } else if let Some(param_type) = self.types_param.get(typ) {
             (format!("{}", param_type), None)
-        } else if let Some((def_path, item_def_path)) = self.types_projection.get(typ) {
-            (interning.def_path_to_string(item_def_path), Some(*def_path))
+        } else if let Some((trait_def_path, item_def_path)) = self.types_projection.get(typ) {
+            (
+                interning.def_path_to_string(item_def_path),
+                Some(*trait_def_path),
+            )
         } else {
             ("Unknown".to_string(), None)
         }
@@ -573,7 +593,7 @@ impl TypeInfo {
         if let Some(string_id) = tokens.pop() {
             let len = string_id.len();
             let mut string_id = string_id.to_string();
-            string_id.truncate(len-3);
+            string_id.truncate(len - 3);
             string_id
         } else {
             "null".to_string()
