@@ -7,7 +7,8 @@ pub type NodeId = usize;
 #[derive(Serialize, Deserialize)]
 pub struct Node {
     pub id: NodeId,
-    pub package: String,
+    pub package_name: Option<String>,
+    pub package_version: Option<String>,
     pub crate_name: String,
     pub relative_def_id: String,
     pub is_externally_visible: bool,
@@ -36,17 +37,24 @@ impl CallGraph {
     pub fn add_node(
         &mut self,
         def_path: &DefPath,
-        package: String,
+        package_info: Option<(String, String)>,
         crate_name: String,
         relative_def_id: String,
         is_externally_visible: bool,
         num_lines: i32,
     ) -> NodeId {
+        let mut package_name = None;
+        let mut package_version = None;
+        if let Some((name, version)) = package_info {
+            package_name = Some(name);
+            package_version = Some(version);
+        }
         let id = self.node_registry.len();
         self.node_registry.insert(*def_path, id);
         self.nodes.push(Node {
             id,
-            package,
+            package_name,
+            package_version,
             crate_name,
             relative_def_id,
             is_externally_visible,

@@ -59,7 +59,7 @@ impl<'a> CallGraphAnalysis<'a> {
         } else {
             let crate_name = self.interning_info.def_path_to_crate(def_path);
             let relative_def_id = self.interning_info.def_path_to_string(def_path);
-            let package = self.interning_info.def_path_to_package(def_path);
+            let package_info = self.interning_info.def_path_to_package(def_path);
             let num_lines = self.functions_info.functions_num_lines(def_path);
             let is_externally_visible = self.functions_info.is_function_externally_visible(
                 def_path,
@@ -68,7 +68,7 @@ impl<'a> CallGraphAnalysis<'a> {
             );
             callgraph.add_node(
                 def_path,
-                package,
+                package_info,
                 crate_name,
                 relative_def_id,
                 is_externally_visible,

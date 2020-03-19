@@ -3,30 +3,30 @@ use corpus_database::types::*;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) struct InterningInfo<'a> {
-    package_names: Vec<String>,
-    package_names_registry: HashMap<CrateHash, usize>,
+    package_info: Vec<(InternedString, InternedString)>,
+    package_info_registry: HashMap<CrateHash, usize>,
     interning_tables: &'a InterningTables,
 }
 
 impl<'a> InterningInfo<'a> {
     pub fn new(interning_tables: &'a InterningTables) -> Self {
-        let mut package_names = Vec::new();
-        let mut package_names_registry = HashMap::new();
+        let mut package_info = Vec::new();
+        let mut package_info_registry = HashMap::new();
         for (_, (pkg, version, _, crate_hash, _)) in interning_tables.builds.iter() {
-            let pkg_interned_string = interning_tables.package_names[*pkg];
-            let version_interned_string = interning_tables.package_versions[*version];
-            if package_names_registry.get(crate_hash).is_none() {
-                package_names_registry.insert(*crate_hash, package_names.len());
-                package_names.push(format!(
-                    "{} {}",
-                    interning_tables.strings[pkg_interned_string],
-                    interning_tables.strings[version_interned_string]
+            let pkg_name_interned_string = interning_tables.package_names[*pkg];
+            let pkg_version_interned_string = interning_tables.package_versions[*version];
+            if package_info_registry.get(crate_hash).is_none() {
+                let id = package_info.len();
+                package_info_registry.insert(*crate_hash, id);
+                package_info.push((
+                    pkg_name_interned_string,
+                    pkg_version_interned_string,
                 ));
             }
         }
         Self {
-            package_names,
-            package_names_registry,
+            package_info,
+            package_info_registry,
             interning_tables,
         }
     }
@@ -44,12 +44,15 @@ impl<'a> InterningInfo<'a> {
         let interned_string = self.interning_tables.crate_names[crate_name];
         self.interning_tables.strings[interned_string].clone()
     }
-    pub fn def_path_to_package(&self, def_path: &DefPath) -> String {
+    pub fn def_path_to_package(&self, def_path: &DefPath) -> Option<(String, String)> {
         let (_, crate_hash, _, _, _) = self.interning_tables.def_paths[*def_path];
-        if let Some(index) = self.package_names_registry.get(&crate_hash) {
-            self.package_names[*index].clone()
+        if let Some(index) = self.package_info_registry.get(&crate_hash) {
+            let (pkg_name_id, pkg_version_id) = self.package_info[*index];
+            let pkg_name = self.interning_tables.strings[pkg_name_id].clone();
+            let pkg_version = self.interning_tables.strings[pkg_version_id].clone();
+            Some((pkg_name, pkg_version))
         } else {
-            String::from("NULL")
+            None
         }
     }
 }
