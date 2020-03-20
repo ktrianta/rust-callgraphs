@@ -189,4 +189,20 @@ impl DatabaseSchema {
         }
         panic!("Type {:?} is not an identifier.", typ);
     }
+    pub fn find_interning_table(&self, name: &syn::Ident) -> Option<&InterningTable> {
+        for table in &self.interning_tables {
+            if &table.name == name {
+                return Some(table);
+            }
+        }
+        None
+    }
+    pub fn find_relation(&self, name: &syn::Ident) -> Option<&Relation> {
+        for relation in &self.relations {
+            if &relation.name == name {
+                return Some(relation);
+            }
+        }
+        None
+    }
 }

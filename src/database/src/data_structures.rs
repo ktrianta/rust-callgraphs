@@ -34,6 +34,18 @@ impl<T> Relation<T> {
     }
 }
 
+impl<T> Into<Vec<T>> for Relation<T> {
+    fn into(self) -> Vec<T> {
+        self.facts
+    }
+}
+
+impl<T> From<Vec<T>> for Relation<T> {
+    fn from(facts: Vec<T>) -> Self {
+        Self { facts: facts }
+    }
+}
+
 pub trait InterningTableKey: Copy + Eq + std::hash::Hash + From<usize> + Into<usize> {}
 impl<T> InterningTableKey for T where T: Copy + Eq + std::hash::Hash + From<usize> + Into<usize> {}
 pub trait InterningTableValue: Eq + std::hash::Hash + Clone {}
@@ -47,7 +59,7 @@ where
     K: InterningTableKey,
     V: InterningTableValue,
 {
-    contents: Vec<V>,
+    pub(crate) contents: Vec<V>,
     #[serde(skip_serializing)]
     inv_contents: HashMap<V, K>,
 }
@@ -105,10 +117,7 @@ where
             .map(|(k, v)| (k.into(), v))
     }
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = (K, &'a V)> {
-        self.contents
-            .iter()
-            .enumerate()
-            .map(|(k, v)| (k.into(), v))
+        self.contents.iter().enumerate().map(|(k, v)| (k.into(), v))
     }
     pub fn len(&self) -> usize {
         self.contents.len()
@@ -119,7 +128,17 @@ impl<K> InterningTable<K, String>
 where
     K: InterningTableKey,
 {
-    pub fn lookup(&self, value: &str) -> Option<K> {
+    pub fn lookup_str(&self, value: &str) -> Option<K> {
+        self.inv_contents.get(value).cloned()
+    }
+}
+
+impl<K, V> InterningTable<K, V>
+where
+    K: InterningTableKey,
+    V: InterningTableValue,
+{
+    pub fn lookup(&self, value: &V) -> Option<K> {
         self.inv_contents.get(value).cloned()
     }
 }
@@ -133,5 +152,19 @@ where
     fn index(&self, key: K) -> &Self::Output {
         let index: usize = key.into();
         &self.contents[index]
+    }
+}
+
+impl<K, V> Into<Vec<(K, V)>> for InterningTable<K, V>
+where
+    K: InterningTableKey,
+    V: InterningTableValue,
+{
+    fn into(self) -> Vec<(K, V)> {
+        self.contents
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| (i.into(), v))
+            .collect()
     }
 }

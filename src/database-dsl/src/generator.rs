@@ -1,6 +1,6 @@
 use crate::ast;
 use log::debug;
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 
 pub(crate) fn generate_tokens(schema: ast::DatabaseSchema) -> TokenStream {
@@ -10,6 +10,7 @@ pub(crate) fn generate_tokens(schema: ast::DatabaseSchema) -> TokenStream {
     let (counters, counter_functions) = generate_counters(&schema);
     let registration_functions = generate_registration_functions(&schema);
     let load_save_functions = generate_load_save_functions(&schema);
+    let loader_functions = generate_loader_functions(&schema);
     let merge_functions = generate_merge_functions(&schema);
     quote! {
         pub mod types {
@@ -17,7 +18,7 @@ pub(crate) fn generate_tokens(schema: ast::DatabaseSchema) -> TokenStream {
             #types
         }
         pub mod tables {
-            use std::path::Path;
+            use std::path::{Path, PathBuf};
             use std::collections::HashMap;
             use failure::Error;
             use serde_derive::{Deserialize, Serialize};
@@ -49,6 +50,17 @@ pub(crate) fn generate_tokens(schema: ast::DatabaseSchema) -> TokenStream {
             }
 
             #load_save_functions
+
+            pub struct Loader {
+                pub(crate) database_root: PathBuf,
+            }
+
+            impl Loader {
+                pub fn new(database_root: PathBuf) -> Self {
+                    Self { database_root }
+                }
+                #loader_functions
+            }
         }
     }
 }
@@ -140,6 +152,10 @@ fn generate_id_decl(name: &syn::Ident, typ: &syn::Type) -> TokenStream {
                 pub fn shift(&self, offset: #typ) -> Self {
                     Self(self.0.checked_add(offset).expect("Overflow!"))
                 }
+                /// Get the underlying index.
+                pub fn index(&self) -> usize {
+                    self.0 as usize
+                }
             }
         });
     }
@@ -178,6 +194,8 @@ fn generate_enum_types(schema: &ast::DatabaseSchema) -> TokenStream {
 
 fn generate_interning_tables(schema: &ast::DatabaseSchema) -> TokenStream {
     let mut fields = TokenStream::new();
+    let mut conversions = TokenStream::new();
+    let mut longest = 2;
     for ast::InterningTable {
         ref name,
         ref key,
@@ -189,6 +207,37 @@ fn generate_interning_tables(schema: &ast::DatabaseSchema) -> TokenStream {
             pub #name: InterningTable<#key_type, #value>,
         };
         fields.extend(field);
+        if let syn::Type::Tuple(syn::TypeTuple { elems, .. }) = value {
+            if longest < elems.len() {
+                longest = elems.len();
+            }
+        }
+    }
+    let mut args = TokenStream::new();
+    let mut type_args = TokenStream::new();
+    let mut type_constraints = TokenStream::new();
+    for i in 0..longest {
+        let arg = syn::Ident::new(&format!("v{}", i), Span::call_site());
+        let type_arg = syn::Ident::new(&format!("V{}", i), Span::call_site());
+        args.extend(quote! {#arg,});
+        type_args.extend(quote! {#type_arg,});
+        type_constraints.extend(quote! {
+            #type_arg: crate::data_structures::InterningTableValue,
+        });
+        conversions.extend(quote! {
+            impl<K, #type_args> Into<Vec<(K, #type_args)>> for InterningTable<K, (#type_args)>
+                where
+                    K: crate::data_structures::InterningTableKey,
+                    #type_constraints
+            {
+                fn into(self) -> Vec<(K, #type_args)> {
+                    self.contents.into_iter().enumerate().map(|(i, (#args))| {
+                        (i.into(), #args)
+                    }).collect()
+                }
+            }
+
+        });
     }
     quote! {
         use crate::data_structures::InterningTable;
@@ -197,6 +246,7 @@ fn generate_interning_tables(schema: &ast::DatabaseSchema) -> TokenStream {
         pub struct InterningTables {
             #fields
         }
+        #conversions
     }
 }
 
@@ -238,7 +288,7 @@ fn generate_counters(schema: &ast::DatabaseSchema) -> (TokenStream, TokenStream)
         } = id;
         let field_name = id.get_field_name();
         fields.extend(quote! {
-            #field_name: #typ,
+            pub(crate) #field_name: #typ,
         });
         let get_fresh_name = id.get_generator_fn_name();
         getter_functions.extend(quote! {
@@ -482,29 +532,26 @@ fn generate_merge_functions(schema: &ast::DatabaseSchema) -> TokenStream {
     let mut tuple_iterning_tables = Vec::new();
     for table in &schema.interning_tables {
         let name = &table.name;
+        println!("{:?}", table);
         if let syn::Type::Tuple(ref values) = table.value {
             tuple_iterning_tables.push((table, values));
-        } else if name == "strings" {
-            tokens.extend(quote! {
-                let #name: HashMap<_, _> = other
-                   .interning_tables
-                   .#name
-                   .into_iter()
-                   .map(|(key, value)| {
-                       let new_key = self.interning_tables.#name.intern(value);
-                       (key, new_key)
-                   })
-                   .collect();
-            });
-            interning_remap.insert(table.get_key_type(), name);
         } else {
+            let arg_remap = if let Some(map) = interning_remap.get(&table.value) {
+                quote! {
+                    let new_value = #map[&value];
+                }
+            } else {
+                quote! {
+                    let new_value = value;
+                }
+            };
             tokens.extend(quote! {
                 let #name: HashMap<_, _> = other
                    .interning_tables
                    .#name
                    .into_iter()
                    .map(|(key, value)| {
-                       let new_value = strings[&value];
+                       #arg_remap
                        let new_key = self.interning_tables.#name.intern(new_value);
                        (key, new_key)
                    })
@@ -568,11 +615,24 @@ fn generate_merge_functions(schema: &ast::DatabaseSchema) -> TokenStream {
                     let counter_name = id.get_field_name();
                     let constant_count = id.constants.len();
                     let typ = &id.typ;
-                    params_remap.extend(quote! {
-                        let #new_name = #param_name.shift(
+                    let shift = quote! {
+                        #param_name.shift(
                             self.counters.#counter_name-(#constant_count as #typ)
-                        );
-                    });
+                        )
+                    };
+                    if constant_count > 0 {
+                        params_remap.extend(quote! {
+                            let #new_name = if #param_name.index() >= #constant_count {
+                                #shift
+                            } else {
+                                *#param_name
+                            };
+                        });
+                    } else {
+                        params_remap.extend(quote! {
+                            let #new_name = #shift;
+                        });
+                    }
                 }
                 ast::TypeKind::InternedId(table) => {
                     let map = &table.name;
@@ -655,6 +715,76 @@ fn generate_load_save_functions(schema: &ast::DatabaseSchema) -> TokenStream {
         #store_counters
         #store_interning_tables
     }
+}
+
+fn generate_loader_functions(schema: &ast::DatabaseSchema) -> TokenStream {
+    let mut tokens = TokenStream::new();
+    for ast::Relation {
+        ref name,
+        ref parameters,
+        ..
+    } in &schema.relations
+    {
+        let file_name = format!("relations/{}.bincode", name);
+        let load_fn_name = syn::Ident::new(&format!("load_{}", name), Span::call_site());
+        let store_fn_name = syn::Ident::new(&format!("store_{}", name), Span::call_site());
+        let mut types = TokenStream::new();
+        for ast::RelationParameter { typ, .. } in parameters {
+            types.extend(quote! {#typ,});
+        }
+        tokens.extend(quote! {
+            pub fn #load_fn_name(&self) -> Vec<(#types)> {
+                let relation: Relation<(#types)> = crate::storage::load(
+                    &self.database_root.join(#file_name)
+                ).unwrap();
+                relation.into()
+            }
+            pub fn #store_fn_name(&self, facts: Vec<(#types)>) {
+                let relation: Relation<(#types)> = facts.into();
+                crate::storage::save(
+                    &relation,
+                    &self.database_root.join(#file_name)
+                );
+            }
+        });
+    }
+    for ast::InterningTable {
+        ref name,
+        ref key,
+        ref value,
+    } in &schema.interning_tables
+    {
+        let file_name = format!("interning/{}.bincode", name);
+        let fn_name = syn::Ident::new(&format!("load_{}", name), Span::call_site());
+        let fn_name_as_vec = syn::Ident::new(&format!("load_{}_as_vec", name), Span::call_site());
+        let key_type = &key.name;
+        let mut types = TokenStream::new();
+        types.extend(quote! {#key_type,});
+        match value {
+            syn::Type::Tuple(syn::TypeTuple { elems, .. }) => {
+                for elem in elems {
+                    types.extend(quote! {#elem,});
+                }
+            }
+            _ => {
+                types.extend(quote! {#value,});
+            }
+        }
+        tokens.extend(quote! {
+            pub fn #fn_name(&self) -> InterningTable<#key_type, #value> {
+                crate::storage::load(
+                    &self.database_root.join(#file_name)
+                ).unwrap()
+            }
+            pub fn #fn_name_as_vec(&self) -> Vec<(#types)> {
+                let table: InterningTable<#key_type, #value> = crate::storage::load(
+                    &self.database_root.join(#file_name)
+                ).unwrap();
+                table.into()
+            }
+        });
+    }
+    tokens
 }
 
 fn load_multifile_relations_function(schema: &ast::DatabaseSchema) -> TokenStream {
