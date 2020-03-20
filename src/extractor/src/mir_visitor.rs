@@ -420,13 +420,7 @@ impl<'a, 'b, 'tcx> MirVisitor<'a, 'b, 'tcx> {
                 match func {
                     mir::Operand::Constant(constant) => {
                         if let ty::TyKind::FnDef(id, substs) = constant.literal.ty.kind {
-                            let mut is_generic = false;
-                            for typ in substs.types() {
-                                match typ.kind {
-                                    rustc::ty::TyKind::Param(_) => is_generic = true,
-                                    _ => {}
-                                }
-                            }
+                            let is_generic = self.is_substs_generic(&substs);
                             let instances = self.compute_instances(id, substs);
                             let caller_def_path = self.body_path;
                             let callee_def_path = self.filler.resolve_def_id(id);
@@ -546,7 +540,6 @@ impl<'a, 'b, 'tcx> MirVisitor<'a, 'b, 'tcx> {
         };
         kind.to_string()
     }
-
     fn compute_instances(&mut self, def_id: DefId, substs: SubstsRef<'tcx>) -> Vec<Instance<'tcx>> {
         let mut instances = Vec::new();
         if let Some(caller_substs_list) = self.substs_map.get(&self.body_id) {
@@ -578,5 +571,17 @@ impl<'a, 'b, 'tcx> MirVisitor<'a, 'b, 'tcx> {
             }
         }
         instances
+    }
+    fn is_substs_generic(&self, substs: &SubstsRef) -> bool {
+        for typ in substs.types() {
+            match typ.kind {
+                rustc::ty::TyKind::Param(_) => return true,
+                rustc::ty::TyKind::Projection(rustc::ty::ProjectionTy { substs, .. }) => {
+                    return self.is_substs_generic(&substs)
+                }
+                _ => {}
+            }
+        }
+        false
     }
 }
