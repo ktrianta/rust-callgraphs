@@ -100,12 +100,12 @@ impl<'a> CallGraphAnalysis<'a> {
                 }
             } else if self.generic_calls.contains(&call_id) {
                 // Add concrete (static dispatch) calls.
-                let mut instantiations_set = HashSet::new();
+                let mut instantiations_set: HashSet<DefPath> = HashSet::new();
                 if let Some(instantiations) = self.generic_calls_instantiations.get(&call_id) {
                     for inst in instantiations {
-                        let inst_id = self.add_node_to_callgraph(&mut callgraph, &inst);
+                        let inst_id = self.add_node_to_callgraph(&mut callgraph, inst);
                         callgraph.add_static_edge(caller_id, inst_id);
-                        instantiations_set.insert(inst);
+                        instantiations_set.insert(*inst);
                     }
                 }
                 // Overaproximate non-concrete calls, i.e., treat call as virtual.
@@ -116,11 +116,20 @@ impl<'a> CallGraphAnalysis<'a> {
                                 // Add only if there is no concrete call already added.
                                 let callee_id = self.add_node_to_callgraph(&mut callgraph, &callee);
                                 callgraph.add_virtual_edge(caller_id, callee_id);
+                                instantiations_set.insert(callee);
                             }
                         }
                     }
                     Err(_) => {}
                     // Err(error) => println!("Resoltion failed: {}", error),
+                }
+                if instantiations_set.is_empty() {
+                    // No instantiations found, so we add a static edge to the original callee.
+                    // This can happen if there are no available concretizations of the callee or
+                    // if the function is generic, but not its receiver, thus we cannot treat it
+                    // the call as a virtual dispatch call.
+                    let callee_id = self.add_node_to_callgraph(&mut callgraph, callee);
+                    callgraph.add_static_edge(caller_id, callee_id);
                 }
             } else {
                 let callee_id = self.add_node_to_callgraph(&mut callgraph, &callee);
