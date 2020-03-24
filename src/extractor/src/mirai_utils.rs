@@ -290,7 +290,7 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<String> {
             // wish to modify in place.
             name.clear();
         } else {
-            name.push('.');
+            name.push_str("::");
         }
         push_component_name(component.data, &mut name);
         if let DefPathData::TypeNs(sym) = component.data {

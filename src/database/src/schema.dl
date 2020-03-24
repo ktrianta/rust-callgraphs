@@ -307,6 +307,10 @@ relation mir_cfgs(item: Item, def_path: DefPath, root_scope: auto Scope);
 relation subscopes(parent: Scope, child: auto Scope, safety: ScopeSafety, span: Span);
 /// Information about spans: (span, call_site_span, expansion kind, location).
 relation spans(span: auto Span, call_site_span: Span, expansion_kind: SpanExpansionKind, location: SpanLocation);
+/// Root scope of the span. It should be the scope of a function, module or other item.
+relation spans_root_scope(span: Span, root_scope: Scope);
+/// Macro definitions
+relation macro_definitions(def_path: DefPath, module: Module, visibility: Visibility, definition_location: SpanLocation);
 /// Additional information about a span that was created by a macro expansion.
 relation macro_expansions(span: Span, macro_symbol: InternedString, macro_definition_location: SpanLocation);
 /// Crate `cfg!` configuration.

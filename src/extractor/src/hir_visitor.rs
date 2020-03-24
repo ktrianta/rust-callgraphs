@@ -4,6 +4,7 @@
 
 use crate::converters::ConvertInto;
 use crate::mir_visitor::MirVisitor;
+use crate::mirai_utils;
 use crate::rustc::mir::HasLocalDecls;
 use crate::table_filler::TableFiller;
 use crate::SubstsMap;
@@ -12,7 +13,7 @@ use rustc::hir::{
     self,
     intravisit::{self, Visitor},
     map::Map as HirMap,
-    HirId,
+    HirId, MacroDef,
 };
 use rustc::mir;
 use rustc::session::Session;
@@ -27,6 +28,7 @@ pub(crate) struct HirVisitor<'a, 'tcx> {
     filler: TableFiller<'a, 'tcx>,
     current_module: types::Module,
     current_item: Option<types::Item>,
+    exported_macros: Vec<types::DefPath>,
 }
 
 impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
@@ -39,7 +41,11 @@ impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
         tcx: TyCtxt<'tcx>,
     ) -> Self {
         let (root_module,) = tables.register_root_modules(build);
-        let filler = TableFiller::new(tcx, hir_map, session, tables);
+        let mut filler = TableFiller::new(tcx, hir_map, session, tables);
+        let mut exported_macros = Vec::new();
+        for macro_def in hir_map.krate().exported_macros {
+            exported_macros.push(filler.resolve_hir_id(macro_def.hir_id));
+        }
         Self {
             tcx,
             hir_map,
@@ -47,6 +53,7 @@ impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
             filler,
             current_module: root_module,
             current_item: None,
+            exported_macros,
         }
     }
     pub fn filler(self) -> TableFiller<'a, 'tcx> {
@@ -385,6 +392,23 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
         let owner = self.hir_map.body_owner_def_id(id);
         let mir_body = self.tcx.optimized_mir(owner);
         self.visit_mir(owner, mir_body);
+    }
+    fn visit_macro_def(&mut self, macro_def: &'tcx MacroDef<'tcx>) {
+        let def_path = self.filler.resolve_hir_id(macro_def.hir_id);
+        let source_map = self.filler.session.source_map();
+        let def_location = source_map.span_to_string(macro_def.span);
+        let expansion_data = macro_def.span.ctxt().outer_expn_data();
+        let mut visibility = macro_def.vis.convert_into();
+        if self.exported_macros.contains(&def_path) {
+            visibility = types::Visibility::Public;
+        }
+        self.filler.tables.register_macro_definitions(
+            def_path,
+            self.current_module,
+            visibility,
+            def_location,
+        );
+        intravisit::walk_macro_def(self, macro_def);
     }
     fn nested_visit_map<'this>(&'this mut self) -> intravisit::NestedVisitorMap<'this, 'tcx> {
         intravisit::NestedVisitorMap::All(self.hir_map)

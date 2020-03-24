@@ -16,7 +16,7 @@ use rustc::session::Session;
 pub(crate) struct TableFiller<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     hir_map: &'a HirMap<'tcx>,
-    session: &'a Session,
+    pub(crate) session: &'a Session,
     pub(crate) tables: Tables,
     span_registry: HashMap<Span, types::Span>,
     type_registry: HashMap<ty::Ty<'tcx>, types::Type>,
@@ -58,7 +58,7 @@ impl<'a, 'tcx> TableFiller<'a, 'tcx> {
             summary_key_str_value,
         )
     }
-    pub fn register_span(&mut self, span: Span) -> types::Span {
+    pub fn register_span(&mut self, span: Span, root_scope: types::Scope) -> types::Span {
         if self.span_registry.contains_key(&span) {
             self.span_registry[&span]
         } else {
@@ -68,13 +68,15 @@ impl<'a, 'tcx> TableFiller<'a, 'tcx> {
             let call_site_span = if let ExpnKind::Root = expansion_data.kind {
                 self.tables.get_root_parent_span()
             } else {
-                self.register_span(expansion_data.call_site)
+                self.register_span(expansion_data.call_site, root_scope)
             };
             let (interned_span,) = self.tables.register_spans(
                 call_site_span,
                 expansion_data.kind.descr().to_string(),
                 location,
             );
+            self.tables
+                .register_spans_root_scope(interned_span, root_scope);
             if let ExpnKind::Macro(_, symbol) = expansion_data.kind {
                 self.tables.register_macro_expansions(
                     interned_span,

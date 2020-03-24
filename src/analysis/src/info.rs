@@ -36,6 +36,29 @@ impl<'a> InterningInfo<'a> {
         let interned_string = self.interning_tables.relative_def_paths[relative_def_id];
         self.interning_tables.strings[interned_string].clone()
     }
+    pub fn def_path_to_summary_key_string(&self, def_path: &DefPath) -> String {
+        let (_, _, _, _, summary_key) = self.interning_tables.def_paths[*def_path];
+        let interned_summary_key = self.interning_tables.summary_keys[summary_key];
+        self.interning_tables.strings[interned_summary_key].clone()
+    }
+    // HACK: Produces a summary key from a dummy or external macro's span location.
+    // Expects that the span location of the macro will have the following form
+    // "<::{package-name}::{module-name}*::{macro-name} {package-name}>:{line-numbers}" and
+    // returns a summary key of the form "{package-name}::{module-name}*::{macro-name}".
+    pub fn span_location_to_summary_key_string(&self, location: SpanLocation) -> String {
+        let location = self.span_location_to_string(location);
+        // Split the location string on " ".
+        let tokens: Vec<&str> = location.split(' ').collect();
+        // Keep the first substring while dropping the first three characters "<::".
+        String::from(&tokens[0][3..])
+    }
+    pub fn span_location_to_num_lines(&self, location: SpanLocation) -> i32 {
+        use std::str::FromStr;
+        let string = self.span_location_to_string(location);
+        let tokens: Vec<&str> = string.split(':').collect();
+        let n = tokens.len();
+        i32::from_str(&tokens[n - 2][1..]).unwrap_or(0) - i32::from_str(tokens[n - 4]).unwrap_or(0)
+    }
     pub fn def_path_to_crate(&self, def_path: &DefPath) -> String {
         let (crate_name, _, _, _, _) = self.interning_tables.def_paths[*def_path];
         let interned_string = self.interning_tables.crate_names[crate_name];
@@ -50,6 +73,94 @@ impl<'a> InterningInfo<'a> {
             Some((pkg_name, pkg_version))
         } else {
             None
+        }
+    }
+}
+
+pub(crate) struct MacrosInfo<'a> {
+    macros: HashMap<DefPath, (Module, Visibility, SpanLocation)>,
+    // Vector of macro calls (function_def_path, macro_def_path).
+    macro_calls: Vec<(DefPath, DefPath)>,
+    interning: InterningInfo<'a>,
+}
+
+impl<'a> MacrosInfo<'a> {
+    pub fn new(tables: &'a Tables) -> Self {
+        let interning = InterningInfo::new(&tables.interning_tables);
+        let mut functions_scopes = HashMap::new();
+        for (_, def_path, scope) in tables.relations.mir_cfgs.iter() {
+            functions_scopes.insert(*scope, *def_path);
+        }
+        // Mapping from span to its root scope.
+        let mut spans_root_scope = HashMap::new();
+        for (span, root_scope) in tables.relations.spans_root_scope.iter() {
+            spans_root_scope.insert(*span, *root_scope);
+        }
+        let mut macros = HashMap::new();
+        let mut def_location_to_def_path = HashMap::new();
+        let mut summary_key_to_def_path = HashMap::new();
+        for (def_path, module, visibility, location) in tables.relations.macro_definitions.iter() {
+            def_location_to_def_path.insert(*location, *def_path);
+            let summary_key = interning.def_path_to_summary_key_string(def_path);
+            summary_key_to_def_path.insert(summary_key, *def_path);
+            macros.insert(*def_path, (*module, *visibility, *location));
+        }
+        let mut span_to_call_site = HashMap::new();
+        for (span, call_site, _, _) in tables.relations.spans.iter() {
+            span_to_call_site.insert(*span, *call_site);
+        }
+        let mut macro_calls = Vec::new();
+        let mut call_sites: HashSet<Span> = HashSet::default();
+        for (span, _, location) in tables.relations.macro_expansions.iter() {
+            let call_site = span_to_call_site[span];
+            if call_sites.contains(&call_site) {
+                continue;
+            }
+            call_sites.insert(call_site);
+            if let Some(scope) = spans_root_scope.get(span) {
+                if let Some(function_def_path) = functions_scopes.get(&scope) {
+                    if let Some(macro_def_path) = def_location_to_def_path.get(location) {
+                        macro_calls.push((*function_def_path, *macro_def_path));
+                    } else {
+                        let summary_key = interning.span_location_to_summary_key_string(*location);
+                        if let Some(macro_def_path) = summary_key_to_def_path.get(&summary_key) {
+                            macro_calls.push((*function_def_path, *macro_def_path));
+                        }
+                    }
+                }
+            }
+        }
+        Self {
+            macros,
+            macro_calls,
+            interning,
+        }
+    }
+    pub fn iter_def_paths(&self) -> impl Iterator<Item = &DefPath> {
+        self.macros.iter().map(|(def_path, _)| def_path)
+    }
+    pub fn iter_macro_calls(&self) -> impl Iterator<Item = (&DefPath, &DefPath)> {
+        self.macro_calls
+            .iter()
+            .map(|(function_def_path, macro_def_path)| (function_def_path, macro_def_path))
+    }
+    pub fn macros_num_lines(&self, def_path: &DefPath) -> i32 {
+        if let Some((_, _, location)) = self.macros.get(def_path) {
+            self.interning.span_location_to_num_lines(*location)
+        } else {
+            0
+        }
+    }
+    pub fn is_externally_visible(&self, def_path: &DefPath, modules: &ModulesInfo) -> bool {
+        if let Some((module, visibility, _)) = self.macros.get(def_path) {
+            match visibility {
+                Visibility::Public => modules.is_externally_visible(module),
+                _ => false,
+            }
+        } else {
+            // If function definition is missing it is because it is defined in another package,
+            // thus it is externally visible.
+            true
         }
     }
 }
@@ -108,17 +219,12 @@ impl<'a> FunctionsInfo<'a> {
     }
     pub fn functions_num_lines(&self, def_path: &DefPath) -> i32 {
         if let Some((_, _, Some(location))) = self.functions.get(def_path) {
-            use std::str::FromStr;
-            let string = self.interning.span_location_to_string(*location);
-            let tokens: Vec<&str> = string.split(':').collect();
-            let n = tokens.len();
-            i32::from_str(&tokens[n - 2][1..]).unwrap_or(0)
-                - i32::from_str(tokens[n - 4]).unwrap_or(0)
+            self.interning.span_location_to_num_lines(*location)
         } else {
             0
         }
     }
-    pub fn is_function_externally_visible(
+    pub fn is_externally_visible(
         &self,
         def_path: &DefPath,
         modules: &ModulesInfo,
@@ -140,7 +246,7 @@ impl<'a> FunctionsInfo<'a> {
                 }
             } else {
                 match visibility {
-                    Visibility::Public => modules.is_module_externally_visible(module),
+                    Visibility::Public => modules.is_externally_visible(module),
                     _ => false,
                 }
             }
@@ -264,7 +370,7 @@ impl ModulesInfo {
             }
         }
     }
-    pub fn is_module_externally_visible(&self, module: &Module) -> bool {
+    pub fn is_externally_visible(&self, module: &Module) -> bool {
         if let Some(is_externally_visible) = self.module_is_externally_visible.get(module) {
             *is_externally_visible
         } else {
@@ -491,7 +597,7 @@ impl TypeInfo {
     fn is_trait_externally_visible(&self, def_path: &DefPath, modules: &ModulesInfo) -> bool {
         if let Some((_, visibility, module)) = self.traits.get(def_path) {
             match visibility {
-                Visibility::Public => modules.is_module_externally_visible(module),
+                Visibility::Public => modules.is_externally_visible(module),
                 _ => false,
             }
         } else {
@@ -503,7 +609,7 @@ impl TypeInfo {
     fn is_adt_externally_visible(&self, def_path: &DefPath, modules: &ModulesInfo) -> bool {
         if let Some((_, visibility, module)) = self.adts.get(def_path) {
             match visibility {
-                Visibility::Public => modules.is_module_externally_visible(module),
+                Visibility::Public => modules.is_externally_visible(module),
                 _ => false,
             }
         } else {

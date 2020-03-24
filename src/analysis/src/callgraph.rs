@@ -17,11 +17,14 @@ pub struct Node {
 
 #[derive(Serialize, Deserialize)]
 pub struct CallGraph {
-    // Call-graph nodes, i.e., functions
-    nodes: Vec<Node>,
+    // Call-graph function nodes
+    functions: Vec<Node>,
+    // Call-graph function nodes
+    macros: Vec<Node>,
     // Call-graph edges, i.e., caller function calls callee function.
     // The boolean value indicates if the call is statically dispatched.
-    edges: Vec<(NodeId, NodeId, bool)>,
+    function_calls: Vec<(NodeId, NodeId, bool)>,
+    macro_calls: Vec<(NodeId, NodeId)>,
     #[serde(skip)]
     node_registry: HashMap<DefPath, usize>,
 }
@@ -29,8 +32,10 @@ pub struct CallGraph {
 impl CallGraph {
     pub fn new() -> Self {
         Self {
-            nodes: Vec::new(),
-            edges: Vec::new(),
+            functions: Vec::new(),
+            macros: Vec::new(),
+            function_calls: Vec::new(),
+            macro_calls: Vec::new(),
             node_registry: HashMap::new(),
         }
     }
@@ -42,6 +47,7 @@ impl CallGraph {
         relative_def_id: String,
         is_externally_visible: bool,
         num_lines: i32,
+        is_macro: bool,
     ) -> NodeId {
         let mut package_name = None;
         let mut package_version = None;
@@ -51,7 +57,11 @@ impl CallGraph {
         }
         let id = self.node_registry.len();
         self.node_registry.insert(*def_path, id);
-        self.nodes.push(Node {
+        let nodes = match is_macro {
+            true => &mut self.macros,
+            false => &mut self.functions,
+        };
+        nodes.push(Node {
             id,
             package_name,
             package_version,
@@ -62,11 +72,14 @@ impl CallGraph {
         });
         id
     }
-    pub fn add_static_edge(&mut self, caller_id: NodeId, callee_id: NodeId) {
-        self.edges.push((caller_id, callee_id, true));
+    pub fn add_static_function_call_edge(&mut self, caller_id: NodeId, callee_id: NodeId) {
+        self.function_calls.push((caller_id, callee_id, true));
     }
-    pub fn add_virtual_edge(&mut self, caller_id: NodeId, callee_id: NodeId) {
-        self.edges.push((caller_id, callee_id, false));
+    pub fn add_virtual_function_call_edge(&mut self, caller_id: NodeId, callee_id: NodeId) {
+        self.function_calls.push((caller_id, callee_id, false));
+    }
+    pub fn add_macro_call_edge(&mut self, caller_id: NodeId, callee_id: NodeId) {
+        self.macro_calls.push((caller_id, callee_id));
     }
     pub fn get_node_by_def_path(&self, def_path: &DefPath) -> Option<&NodeId> {
         self.node_registry.get(def_path)

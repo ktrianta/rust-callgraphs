@@ -97,7 +97,7 @@ impl<'a, 'b, 'tcx> MirVisitor<'a, 'b, 'tcx> {
             } else {
                 self.root_scope
             };
-            let span = self.filler.register_span(scope_data.span);
+            let span = self.filler.register_span(scope_data.span, self.root_scope);
             let mir_scope_safety = self.get_scope_safety(scope);
             let (scope_id,) = self.filler.tables.register_subscopes(
                 parent_scope,
