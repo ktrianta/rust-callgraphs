@@ -9,12 +9,16 @@ use std::fs::File;
 pub struct Type {
     id: usize,
     string_id: String,
+    package_name: Option<String>,
+    package_version: Option<String>,
     relative_def_id: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct Trait {
     id: usize,
+    package_name: Option<String>,
+    package_version: Option<String>,
     relative_def_id: String,
 }
 
@@ -23,6 +27,8 @@ pub struct Impl {
     id: usize,
     type_id: usize,
     trait_id: Option<usize>,
+    package_name: Option<String>,
+    package_version: Option<String>,
     relative_def_id: String,
 }
 
@@ -63,13 +69,22 @@ impl TypeHierarchy {
         } else {
             let id = self.type_registry.len() + self.def_path_registry.len();
             self.type_registry.insert(string_id.clone(), id);
+            let mut package_name = None;
+            let mut package_version = None;
+            let mut relative_def_id = None;
+            if let Some(def_path) = opt_def_path {
+                relative_def_id = Some(interning.def_path_to_string(&def_path));
+                if let Some((name, version)) = interning.def_path_to_package(&def_path) {
+                    package_name = Some(name);
+                    package_version = Some(version);
+                }
+            }
             self.types.push(Type {
                 id,
                 string_id,
-                relative_def_id: match opt_def_path {
-                    Some(def_path) => Some(interning.def_path_to_string(&def_path)),
-                    None => None,
-                },
+                package_name,
+                package_version,
+                relative_def_id,
             });
             id
         }
@@ -80,9 +95,17 @@ impl TypeHierarchy {
         } else {
             let id = self.type_registry.len() + self.def_path_registry.len();
             self.def_path_registry.insert(def_path, id);
+            let mut package_name = None;
+            let mut package_version = None;
+            if let Some((name, version)) = interning.def_path_to_package(&def_path) {
+                package_name = Some(name);
+                package_version = Some(version);
+            }
             let relative_def_id = interning.def_path_to_string(&def_path);
             self.traits.push(Trait {
                 id,
+                package_name,
+                package_version,
                 relative_def_id,
             });
             id
@@ -105,11 +128,19 @@ impl TypeHierarchy {
                 Some(trait_def_path) => Some(self.register_trait(trait_def_path, interning)),
                 None => None,
             };
+            let mut package_name = None;
+            let mut package_version = None;
+            if let Some((name, version)) = interning.def_path_to_package(&def_path) {
+                package_name = Some(name);
+                package_version = Some(version);
+            }
             let relative_def_id = interning.def_path_to_string(&def_path);
             self.impls.push(Impl {
                 id,
                 type_id,
                 trait_id,
+                package_name,
+                package_version,
                 relative_def_id,
             });
             id
