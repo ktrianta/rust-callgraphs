@@ -3,7 +3,7 @@
 // modified, or distributed except according to those terms.
 
 use corpus_database::types;
-use rustc::hir;
+use rustc_hir as hir;
 use rustc::mir;
 use rustc::ty;
 use syntax::ast;

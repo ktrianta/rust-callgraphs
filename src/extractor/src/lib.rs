@@ -9,8 +9,10 @@
 
 extern crate rustc;
 extern crate rustc_data_structures;
+extern crate rustc_errors;
 extern crate rustc_error_codes;
 extern crate rustc_interface;
+extern crate rustc_hir;
 extern crate rustc_metadata;
 extern crate rustc_mir;
 extern crate rustc_span;
@@ -25,8 +27,8 @@ mod table_filler;
 
 use hir_visitor::HirVisitor;
 use lazy_static::lazy_static;
-use rustc::hir::def_id::DefId;
-use rustc::hir::intravisit::walk_crate;
+use rustc_hir::def_id::DefId;
+use rustc_hir::intravisit::walk_crate;
 use rustc::mir::mono::MonoItem;
 use rustc::session::Session;
 use rustc::ty::query::Providers;
@@ -60,7 +62,7 @@ lazy_static! {
 }
 
 fn analyse_with_tcx(name: String, tcx: TyCtxt, session: &Session) {
-    let hash = tcx.crate_hash(rustc::hir::def_id::LOCAL_CRATE);
+    let hash = tcx.crate_hash(rustc_hir::def_id::LOCAL_CRATE);
     let file_name = format!("{}_{}", name, hash.to_string());
     let cargo_pkg_version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let cargo_pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();

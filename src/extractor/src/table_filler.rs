@@ -5,7 +5,8 @@
 use crate::converters::ConvertInto;
 use crate::mirai_utils;
 use corpus_database::{tables::Tables, types};
-use rustc::hir::{self, map::Map as HirMap, HirId};
+use rustc::hir::map::Map as HirMap;
+use rustc_hir::{HirId, def_id::DefId};
 use rustc::ty::{self, TyCtxt};
 use rustc_span::hygiene::ExpnKind;
 use rustc_span::Span;
@@ -42,7 +43,7 @@ impl<'a, 'tcx> TableFiller<'a, 'tcx> {
         let def_id = self.hir_map.local_def_id(id);
         self.resolve_def_id(def_id)
     }
-    pub fn resolve_def_id(&mut self, def_id: hir::def_id::DefId) -> types::DefPath {
+    pub fn resolve_def_id(&mut self, def_id: DefId) -> types::DefPath {
         let crate_num = def_id.krate;
         let crate_name = &self.tcx.crate_name(crate_num).as_str();
         let crate_hash = self.tcx.crate_hash(crate_num).as_u64().into();

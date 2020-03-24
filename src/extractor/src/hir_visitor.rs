@@ -4,22 +4,21 @@
 
 use crate::converters::ConvertInto;
 use crate::mir_visitor::MirVisitor;
-use crate::mirai_utils;
 use crate::rustc::mir::HasLocalDecls;
 use crate::table_filler::TableFiller;
 use crate::SubstsMap;
 use corpus_database::{tables::Tables, types};
-use rustc::hir::{
-    self,
+use rustc_hir as hir;
+use hir::{
     intravisit::{self, Visitor},
-    map::Map as HirMap,
     HirId, MacroDef,
 };
+use rustc::hir::map::Map as HirMap;
 use rustc::mir;
 use rustc::session::Session;
 use rustc::ty::TyCtxt;
 use std::mem;
-use syntax::source_map::Span;
+use rustc_span::source_map::Span;
 
 pub(crate) struct HirVisitor<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
@@ -169,6 +168,8 @@ impl<'a, 'tcx> HirVisitor<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
+    type Map = HirMap<'tcx>;
+
     fn visit_item(&mut self, item: &'tcx hir::Item) {
         let name: &str = &item.ident.name.as_str();
         let visibility: types::Visibility = item.vis.convert_into();
@@ -410,7 +411,7 @@ impl<'a, 'tcx> Visitor<'tcx> for HirVisitor<'a, 'tcx> {
         );
         intravisit::walk_macro_def(self, macro_def);
     }
-    fn nested_visit_map<'this>(&'this mut self) -> intravisit::NestedVisitorMap<'this, 'tcx> {
+    fn nested_visit_map(&mut self) -> intravisit::NestedVisitorMap<HirMap<'tcx>> {
         intravisit::NestedVisitorMap::All(self.hir_map)
     }
 }

@@ -7,7 +7,7 @@ use crate::table_filler::TableFiller;
 use crate::SubstsMap;
 use crate::SubstsSet;
 use corpus_database::types;
-use rustc::hir::def_id::DefId;
+use rustc_hir::def_id::DefId;
 use rustc::mir;
 use rustc::ty::ParamEnv;
 use rustc::ty::{self, subst::SubstsRef, Instance, TyCtxt};
