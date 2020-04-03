@@ -679,7 +679,7 @@ impl TypeInfo {
                 ("()".to_string(), None)
             }
         } else if let Some(param_type) = self.types_param.get(typ) {
-            (format!("{}", param_type), None)
+            (format!("{}: generic", param_type), None)
         } else if let Some((trait_def_path, item_def_path)) = self.types_projection.get(typ) {
             (
                 interning.def_path_to_string(item_def_path),
