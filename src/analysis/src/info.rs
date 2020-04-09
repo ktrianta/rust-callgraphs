@@ -57,7 +57,7 @@ impl<'a> InterningInfo<'a> {
         let string = self.span_location_to_string(location);
         let tokens: Vec<&str> = string.split(':').collect();
         let n = tokens.len();
-        i32::from_str(&tokens[n - 2][1..]).unwrap_or(0) - i32::from_str(tokens[n - 4]).unwrap_or(0)
+        i32::from_str(&tokens[n - 2][1..]).unwrap_or(0) - i32::from_str(tokens[n - 4]).unwrap_or(0) + 1
     }
     pub fn span_location_to_source_location(&self, location: SpanLocation) -> String {
         self.span_location_to_string(location)
