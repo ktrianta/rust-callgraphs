@@ -27,7 +27,7 @@ impl<'a> InterningInfo<'a> {
             interning_tables,
         }
     }
-    pub fn span_location_to_string(&self, location: SpanLocation) -> String {
+    fn span_location_to_string(&self, location: SpanLocation) -> String {
         let interned_string = self.interning_tables.span_locations[location];
         self.interning_tables.strings[interned_string].clone()
     }
@@ -58,6 +58,9 @@ impl<'a> InterningInfo<'a> {
         let tokens: Vec<&str> = string.split(':').collect();
         let n = tokens.len();
         i32::from_str(&tokens[n - 2][1..]).unwrap_or(0) - i32::from_str(tokens[n - 4]).unwrap_or(0)
+    }
+    pub fn span_location_to_source_location(&self, location: SpanLocation) -> String {
+        self.span_location_to_string(location)
     }
     pub fn def_path_to_crate(&self, def_path: &DefPath) -> String {
         let (crate_name, _, _, _, _) = self.interning_tables.def_paths[*def_path];
@@ -151,6 +154,13 @@ impl<'a> MacrosInfo<'a> {
             0
         }
     }
+    pub fn macros_source_location(&self, def_path: &DefPath) -> Option<String> {
+        if let Some((_, _, location)) = self.macros.get(def_path) {
+            Some(self.interning.span_location_to_source_location(*location))
+        } else {
+            None
+        }
+    }
     pub fn is_externally_visible(&self, def_path: &DefPath, modules: &ModulesInfo) -> bool {
         if let Some((module, visibility, _)) = self.macros.get(def_path) {
             match visibility {
@@ -222,6 +232,13 @@ impl<'a> FunctionsInfo<'a> {
             self.interning.span_location_to_num_lines(*location)
         } else {
             0
+        }
+    }
+    pub fn functions_source_location(&self, def_path: &DefPath) -> Option<String> {
+        if let Some((_, _, Some(location))) = self.functions.get(def_path) {
+            Some(self.interning.span_location_to_source_location(*location))
+        } else {
+            None
         }
     }
     pub fn is_externally_visible(
