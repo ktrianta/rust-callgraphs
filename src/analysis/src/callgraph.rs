@@ -13,6 +13,7 @@ pub struct Node {
     pub relative_def_id: String,
     pub is_externally_visible: bool,
     pub num_lines: i32,
+    pub source_location: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -48,6 +49,7 @@ impl CallGraph {
         is_externally_visible: bool,
         num_lines: i32,
         is_macro: bool,
+        source_location: Option<String>,
     ) -> NodeId {
         let mut package_name = None;
         let mut package_version = None;
@@ -69,6 +71,7 @@ impl CallGraph {
             relative_def_id,
             is_externally_visible,
             num_lines,
+            source_location,
         });
         id
     }
