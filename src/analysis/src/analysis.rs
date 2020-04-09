@@ -77,6 +77,10 @@ impl<'a> CallGraphAnalysis<'a> {
                 true => self.macros.macros_num_lines(def_path),
                 false => self.functions.functions_num_lines(def_path),
             };
+            let source_location = match is_macro {
+                true => self.macros.macros_source_location(def_path),
+                false => self.functions.functions_source_location(def_path),
+            };
             let is_externally_visible = match is_macro {
                 true => self.macros.is_externally_visible(def_path, &self.modules),
                 false => self
@@ -91,6 +95,7 @@ impl<'a> CallGraphAnalysis<'a> {
                 is_externally_visible,
                 num_lines,
                 is_macro,
+                source_location,
             )
         }
     }
