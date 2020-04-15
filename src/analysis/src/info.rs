@@ -43,7 +43,7 @@ impl<'a> InterningInfo<'a> {
     }
     // HACK: Produces a summary key from a dummy or external macro's span location.
     // Expects that the span location of the macro will have the following form
-    // "<::{package-name}::{module-name}*::{macro-name} {package-name}>:{line-numbers}" and
+    // "<::{package-name}::{module-name}*::{macro-name} macros>:{line-numbers}" and
     // returns a summary key of the form "{package-name}::{module-name}*::{macro-name}".
     pub fn span_location_to_summary_key_string(&self, location: SpanLocation) -> String {
         let location = self.span_location_to_string(location);
@@ -185,6 +185,7 @@ pub(crate) struct FunctionsInfo<'a> {
 
 impl<'a> FunctionsInfo<'a> {
     pub fn new(tables: &'a Tables) -> Self {
+        let interning = InterningInfo::new(&tables.interning_tables);
         let mut functions_scopes = HashMap::new();
         for (_, def_path, scope) in tables.relations.mir_cfgs.iter() {
             functions_scopes.insert(*def_path, *scope);
@@ -197,14 +198,42 @@ impl<'a> FunctionsInfo<'a> {
         for (span, _, _, location) in tables.relations.spans.iter() {
             spans_locations.insert(*span, *location);
         }
+        // Mapping from macro summary key (def_path) to definition location.
+        let mut summary_key_to_def_location = HashMap::new();
+        for (def_path, _, _, location) in tables.relations.macro_definitions.iter() {
+            let summary_key = interning.def_path_to_summary_key_string(def_path);
+            summary_key_to_def_location.insert(summary_key, *location);
+        }
+        // Mapping from span, which is created by a macro, to the macro's definition location.
+        let mut macro_created_span_to_location = HashMap::new();
+        for (span, _, location) in tables.relations.macro_expansions.iter() {
+            macro_created_span_to_location.insert(*span, *location);
+        }
         let mut functions = HashMap::new();
         for (_, def_path, module, visibility, _, _, _) in
             tables.relations.function_definitions.iter()
         {
             if let Some(scope) = functions_scopes.get(def_path) {
                 let span = scopes_spans[&scope];
-                let location = spans_locations[&span];
-                functions.insert(*def_path, (*module, *visibility, Some(location)));
+                if let Some(location) = macro_created_span_to_location.get(&span) {
+                    // If the span is created by a macro expansion, attempt to extract a summary
+                    // key from the location, which should have the following form
+                    // "<::{package-name}::{module-name}*::{macro-name} macros>:{line-numbers}"
+                    let summary_key = interning.span_location_to_summary_key_string(*location);
+                    if let Some(def_location) = summary_key_to_def_location.get(&summary_key) {
+                        // We set the definition location of the function to the definition
+                        // location of the macro that produced it.
+                        functions.insert(*def_path, (*module, *visibility, Some(*def_location)));
+                    } else {
+                        // If the macro that is expanded is defined in the standard library, i.e.,
+                        // std, core, etc., we cannot retrieve the exact definition location of the
+                        // function at this point and we leave it to post-processing.
+                        functions.insert(*def_path, (*module, *visibility, Some(*location)));
+                    }
+                } else {
+                    let location = spans_locations[&span];
+                    functions.insert(*def_path, (*module, *visibility, Some(location)));
+                }
             } else {
                 functions.insert(*def_path, (*module, *visibility, None));
             }
@@ -221,7 +250,7 @@ impl<'a> FunctionsInfo<'a> {
             functions,
             function_to_impl_item,
             function_to_trait_item,
-            interning: InterningInfo::new(&tables.interning_tables),
+            interning,
         }
     }
     pub fn iter_def_paths(&self) -> impl Iterator<Item = &DefPath> {
