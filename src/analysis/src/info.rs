@@ -176,7 +176,7 @@ impl<'a> MacrosInfo<'a> {
 }
 
 pub(crate) struct FunctionsInfo<'a> {
-    functions: HashMap<DefPath, (Module, Visibility, Option<SpanLocation>)>,
+    functions: HashMap<DefPath, (Module, Visibility, Option<SpanLocation>, bool)>,
     function_to_impl_item: HashMap<DefPath, Item>,
     function_to_trait_item: HashMap<DefPath, Item>,
     // Interning tables.
@@ -223,19 +223,19 @@ impl<'a> FunctionsInfo<'a> {
                     if let Some(def_location) = summary_key_to_def_location.get(&summary_key) {
                         // We set the definition location of the function to the definition
                         // location of the macro that produced it.
-                        functions.insert(*def_path, (*module, *visibility, Some(*def_location)));
+                        functions.insert(*def_path, (*module, *visibility, Some(*def_location), true));
                     } else {
                         // If the macro that is expanded is defined in the standard library, i.e.,
                         // std, core, etc., we cannot retrieve the exact definition location of the
                         // function at this point and we leave it to post-processing.
-                        functions.insert(*def_path, (*module, *visibility, Some(*location)));
+                        functions.insert(*def_path, (*module, *visibility, Some(*location), true));
                     }
                 } else {
                     let location = spans_locations[&span];
-                    functions.insert(*def_path, (*module, *visibility, Some(location)));
+                    functions.insert(*def_path, (*module, *visibility, Some(location), false));
                 }
             } else {
-                functions.insert(*def_path, (*module, *visibility, None));
+                functions.insert(*def_path, (*module, *visibility, None, false));
             }
         }
         let mut function_to_impl_item = HashMap::new();
@@ -257,15 +257,23 @@ impl<'a> FunctionsInfo<'a> {
         self.functions.iter().map(|(def_path, _)| def_path)
     }
     pub fn functions_num_lines(&self, def_path: &DefPath) -> i32 {
-        if let Some((_, _, Some(location))) = self.functions.get(def_path) {
-            self.interning.span_location_to_num_lines(*location)
+        if let Some((_, _, Some(location), is_macro_expanded)) = self.functions.get(def_path) {
+            if !is_macro_expanded {
+                self.interning.span_location_to_num_lines(*location)
+            } else {
+                0
+            }
         } else {
             0
         }
     }
     pub fn functions_source_location(&self, def_path: &DefPath) -> Option<String> {
-        if let Some((_, _, Some(location))) = self.functions.get(def_path) {
-            Some(self.interning.span_location_to_source_location(*location))
+        if let Some((_, _, Some(location), is_macro_expanded)) = self.functions.get(def_path) {
+            let mut location_str = self.interning.span_location_to_source_location(*location);
+            if *is_macro_expanded {
+                location_str.push_str(":macro-expanded");
+            }
+            Some(location_str)
         } else {
             None
         }
@@ -276,7 +284,7 @@ impl<'a> FunctionsInfo<'a> {
         modules: &ModulesInfo,
         types: &TypeInfo,
     ) -> bool {
-        if let Some((module, visibility, _)) = self.functions.get(def_path) {
+        if let Some((module, visibility, _, _)) = self.functions.get(def_path) {
             if let Some(trait_item) = self.function_to_trait_item.get(def_path) {
                 types.is_trait_item_externally_visible(trait_item, modules)
             } else if let Some(impl_item) = self.function_to_impl_item.get(def_path) {
