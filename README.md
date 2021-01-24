@@ -1,4 +1,11 @@
-# Rust Call-Graph Generator
+# A Rust Call-Graph Generator
+
+## Acknowledgments and Project History
+
+The call-graph generator builds upon and extends an older (not public) version of the
+[Qrates](https://github.com/rust-corpus/qrates) framework from January 2020. The framework was originally developed by
+Nicolas Winkler and had the name RustQL. Later, Vytautas Astrauskas (the main developer of Qrates) was responsible for
+its maintenance and evolution.
 
 ## Prerequisites
 
